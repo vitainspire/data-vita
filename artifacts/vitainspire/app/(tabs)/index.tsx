@@ -63,7 +63,11 @@ export default function FieldCaptureTab() {
     const valid = groups.filter((g) => g && typeof g.code === "string" && g.code);
     const q = query.trim().toLowerCase();
     if (!q) return valid;
-    return valid.filter((g) => g.code.toLowerCase().includes(q));
+    return valid.filter(
+      (g) =>
+        g.code.toLowerCase().includes(q) ||
+        (g.label && g.label.toLowerCase().includes(q)),
+    );
   }, [groups, query]);
 
   const completedCount = (g: FieldGroup) =>
@@ -187,18 +191,26 @@ export default function FieldCaptureTab() {
                     style={[
                       styles.fieldBadge,
                       {
-                        backgroundColor: colors.muted,
+                        backgroundColor: colors.primary,
                         borderRadius: colors.radius - 4,
                       },
                     ]}
                   >
-                    <Feather name="map-pin" size={18} color={colors.primary} />
+                    <Text
+                      style={[
+                        styles.fieldNumber,
+                        { color: colors.primaryForeground },
+                      ]}
+                    >
+                      #{g.code}
+                    </Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text
                       style={[styles.fieldCode, { color: colors.foreground }]}
+                      numberOfLines={1}
                     >
-                      {g.code}
+                      {g.label || `Field #${g.code}`}
                     </Text>
                     <Text
                       style={[
@@ -334,10 +346,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   fieldBadge: {
-    width: 40,
+    minWidth: 48,
     height: 40,
+    paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
+  },
+  fieldNumber: {
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 0.3,
   },
   fieldCode: {
     fontSize: 16,

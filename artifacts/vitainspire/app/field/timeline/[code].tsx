@@ -93,10 +93,10 @@ export default function FieldTimelineScreen() {
     >
       <View style={{ gap: 6 }}>
         <Text style={[styles.eyebrow, { color: colors.accent }]}>
-          FIELD ID
+          FIELD #{code}
         </Text>
         <Text style={[styles.title, { color: colors.foreground }]}>
-          {code}
+          {group?.label || `Field #${code}`}
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           {completedCount}/3 stages completed

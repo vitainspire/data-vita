@@ -63,6 +63,7 @@ export type FieldRecord = StandingField | CuttingField | ChoppedField;
 
 export type FieldGroup = {
   code: string;
+  label?: string;
   createdAt: number;
   lastUpdated: number;
   stages: {
@@ -157,14 +158,10 @@ export async function getNextFieldCode(): Promise<string> {
   const all = await getFieldList();
   let max = 0;
   for (const f of all) {
-    const m = f.code.match(/AP-KNL-(\d+)/);
-    if (m) {
-      const n = parseInt(m[1], 10);
-      if (n > max) max = n;
-    }
+    const n = parseInt(f.code, 10);
+    if (!Number.isNaN(n) && n > max) max = n;
   }
-  const next = (max + 1).toString().padStart(3, "0");
-  return `AP-KNL-${next}`;
+  return String(max + 1);
 }
 
 export async function getFields(): Promise<FieldRecord[]> {
@@ -188,6 +185,7 @@ export async function getFieldGroups(): Promise<FieldGroup[]> {
     if (!f || typeof f.code !== "string" || !f.code) continue;
     map.set(f.code, {
       code: f.code,
+      label: f.label,
       createdAt: f.createdAt || Date.now(),
       lastUpdated: f.createdAt || Date.now(),
       stages: {},

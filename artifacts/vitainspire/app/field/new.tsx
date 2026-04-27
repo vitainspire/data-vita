@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { useToast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
-import { addField, getFieldList, getNextFieldCode } from "@/lib/storage";
+import { addField, getNextFieldCode } from "@/lib/storage";
 
 export default function NewFieldScreen() {
   const colors = useColors();
@@ -23,32 +22,31 @@ export default function NewFieldScreen() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const [code, setCode] = useState("");
-  const [suggestion, setSuggestion] = useState("");
-  const [taken, setTaken] = useState<string[]>([]);
+  const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
       const next = await getNextFieldCode();
-      const list = await getFieldList();
-      setSuggestion(next);
-      setTaken(list.map((f) => f.code.toLowerCase()));
-      if (!code) setCode(next);
+      setCode(next);
     })();
   }, []);
 
   const isWeb = Platform.OS === "web";
-  const trimmed = code.trim();
-  const isDup = taken.includes(trimmed.toLowerCase());
-  const valid = trimmed.length >= 3 && !isDup;
+  const trimmedLabel = label.trim();
+  const valid = code.length > 0;
 
   const onCreate = async () => {
     if (!valid) return;
     setSaving(true);
-    await addField({ code: trimmed, createdAt: Date.now() });
+    await addField({
+      code,
+      createdAt: Date.now(),
+      label: trimmedLabel || undefined,
+    });
     setSaving(false);
-    toast.show(`Field ${trimmed} created`);
-    router.replace(`/field/timeline/${trimmed}`);
+    toast.show(`Field #${code} created`);
+    router.replace(`/field/timeline/${code}`);
   };
 
   return (
@@ -66,62 +64,63 @@ export default function NewFieldScreen() {
           Register a new field
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Give this plot a unique ID so you can track it across all stages.
+          Each field gets a sequential number. Add an optional Field ID to
+          remember it later.
+        </Text>
+      </View>
+
+      <View
+        style={[
+          styles.numberCard,
+          {
+            backgroundColor: colors.primary,
+            borderRadius: colors.radius,
+          },
+        ]}
+      >
+        <Text
+          style={[styles.numberLabel, { color: "rgba(255,255,255,0.85)" }]}
+        >
+          FIELD NUMBER
+        </Text>
+        <Text style={[styles.numberValue, { color: colors.primaryForeground }]}>
+          #{code || "…"}
         </Text>
       </View>
 
       <View style={{ gap: 8 }}>
-        <Text style={[styles.label, { color: colors.foreground }]}>
-          Field ID
-        </Text>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, { color: colors.foreground }]}>
+            Field ID
+          </Text>
+          <Text style={[styles.optional, { color: colors.mutedForeground }]}>
+            optional
+          </Text>
+        </View>
         <TextInput
-          value={code}
-          onChangeText={setCode}
+          value={label}
+          onChangeText={setLabel}
           autoCapitalize="characters"
           autoCorrect={false}
-          placeholder="AP-KNL-001"
+          placeholder="e.g. AP-KNL-001"
           placeholderTextColor={colors.mutedForeground}
           style={[
             styles.input,
             {
               backgroundColor: colors.card,
-              borderColor: isDup ? "#c0392b" : colors.border,
+              borderColor: colors.border,
               color: colors.foreground,
               borderRadius: colors.radius,
             },
           ]}
         />
-        {isDup ? (
-          <Text style={[styles.helper, { color: "#c0392b" }]}>
-            This Field ID already exists.
-          </Text>
-        ) : (
+        <View style={styles.helperRow}>
+          <Feather name="info" size={12} color={colors.mutedForeground} />
           <Text style={[styles.helper, { color: colors.mutedForeground }]}>
-            Format: STATE-DISTRICT-NUMBER (e.g. AP-KNL-001)
+            Used as a label only. The field number stays {`#${code || "…"}`}.
           </Text>
-        )}
+        </View>
       </View>
-
-      {suggestion && suggestion !== trimmed ? (
-        <Pressable
-          onPress={() => setCode(suggestion)}
-          style={({ pressed }) => [
-            styles.suggestion,
-            {
-              backgroundColor: colors.muted,
-              borderRadius: colors.radius,
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          <Feather name="zap" size={16} color={colors.primary} />
-          <Text
-            style={[styles.suggestionText, { color: colors.foreground }]}
-          >
-            Use suggested: {suggestion}
-          </Text>
-        </Pressable>
-      ) : null}
 
       <PrimaryButton
         title="Create Field"
@@ -145,9 +144,34 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     lineHeight: 21,
   },
+  numberCard: {
+    paddingVertical: 22,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    gap: 4,
+  },
+  numberLabel: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 1.4,
+  },
+  numberValue: {
+    fontSize: 44,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 0.5,
+  },
+  labelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   label: {
     fontSize: 14,
     fontFamily: "Inter_600SemiBold",
+  },
+  optional: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
   },
   input: {
     height: 52,
@@ -157,18 +181,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     borderWidth: 1,
   },
+  helperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   helper: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",
-  },
-  suggestion: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    padding: 12,
-  },
-  suggestionText: {
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
   },
 });
