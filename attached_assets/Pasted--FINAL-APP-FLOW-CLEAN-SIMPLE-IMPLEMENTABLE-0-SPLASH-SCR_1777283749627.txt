@@ -1,0 +1,133 @@
+🌽 FINAL APP FLOW (CLEAN + SIMPLE + IMPLEMENTABLE)
+🟣 0️⃣ SPLASH SCREEN
+Vitainspire  
+Smart Farming. Better Yield.
+
+→ Auto navigate
+
+🧭 1️⃣ MAIN SCREEN (3 TABS)
+[ Field Capture ]   [ Harvest ]   [ Post Harvest ]
+
+👉 This is perfect. Keep only these 3.
+
+🟢 TAB 1: FIELD CAPTURE (SIMPLIFIED)
+
+👉 Purpose: capture lifecycle (standing → cut → chopped)
+
+🔹 Screen 1: Choose Stage
+What are you capturing today?
+
+○ Standing Crop  
+○ Cutting Stage  
+○ Chopped Stage  
+
+👉 THIS removes confusion completely
+
+🌱 IF “STANDING”
+Capture:
+- Plant Photo
+- Leaf Close-up
+- Cob with Scale
+
+→ Save → Field created
+
+✂️ IF “CUTTING” (WITH ZONE SAMPLING)
+🔹 Screen: Guided Field Walk
+
+Instead of tabs → make it step-based
+
+Zone A (Best Area)
+Plant Photo
+Cob Photo
+
+Inputs:
+
+Height → Tall / Medium / Short
+Color → Dark / Light / Yellow
+Density → Dense / Normal / Sparse
+[ Next → Zone B ]
+Zone B (Average)
+
+Same UI
+
+[ Next → Zone C ]
+Zone C (Weak)
+
+Same UI
+
+[ Continue ]
+
+👉 MUCH smoother than tabs
+
+🔪 IF “CHOPPED”
+Capture:
+- Chopped Material Photo
+
+Inputs (optional):
+
+Chop Size → Small / Medium / Large
+Moisture → Dry / Normal / Wet
+
+→ Save
+
+🟡 TAB 2: HARVEST
+
+👉 Keep this clean (don’t overload)
+
+🔹 Screen 1: Farmer Capture
+[ Capture Farmer Photo ]
+→ Continue
+🔹 Screen 2: Dashboard
+[ Start New Field Visit ]
+[ Record Harvest Data ]
+🔹 Start New Field Visit
+Field Setup
+Field Area
+[ Use Acre Walker ]
+
+Crop Type:
+
+Maize | Rice | Wheat | Sugarcane | Cotton
+[ Next ]
+🔹 Overall Field Health
+Plant Stand → Good / Medium / Poor  
+Pest → None / Mild / Severe  
+Disease → Yes / No  
+Rainfall → Adequate / Low / Excess  
+
+👉 Add icons 👍
+
+🔹 Smart Photo Checklist
+Field Overview
+Leaf Close-up
+Cob with Scale
+[ Save Field ]
+🔹 Record Harvest Data
+Select Field
+→ Enter Harvest Weight
+→ Select Output (Grain / Silage)
+→ Submit
+🔵 TAB 3: POST HARVEST
+🔹 Step 1
+Select Field ID
+🔹 Step 2
+Create Silage Batch
+🔹 Step 3: Photos
+Storage Overview
+Cross Section
+Sample Bag
+Texture
+🔹 Step 4: Inputs
+pH
+Smell
+Mold
+[ Submit ]
+🔗 FINAL FLOW (VERY CLEAN)
+Field Capture:
+Standing / Cutting / Chopped (separate, simple)
+
+Harvest:
+Farmer → Field Setup → Health → Photos → Yield
+
+Post Harvest:
+Field → Silage → Submit
