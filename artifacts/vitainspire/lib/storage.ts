@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const KEYS = {
+  fieldList: "vitainspire:fieldList",
   fields: "vitainspire:fields",
   harvestFields: "vitainspire:harvestFields",
   harvestRecords: "vitainspire:harvestRecords",
@@ -14,8 +15,15 @@ export function makeId(): string {
 
 export type FieldStage = "standing" | "cutting" | "chopped";
 
+export type Field = {
+  code: string;
+  createdAt: number;
+  label?: string;
+};
+
 export type StandingField = {
   id: string;
+  fieldCode: string;
   stage: "standing";
   createdAt: number;
   plantPhoto: string | null;
@@ -33,6 +41,7 @@ export type ZoneData = {
 
 export type CuttingField = {
   id: string;
+  fieldCode: string;
   stage: "cutting";
   createdAt: number;
   zoneA: ZoneData;
@@ -42,6 +51,7 @@ export type CuttingField = {
 
 export type ChoppedField = {
   id: string;
+  fieldCode: string;
   stage: "chopped";
   createdAt: number;
   photo: string | null;
@@ -50,6 +60,17 @@ export type ChoppedField = {
 };
 
 export type FieldRecord = StandingField | CuttingField | ChoppedField;
+
+export type FieldGroup = {
+  code: string;
+  createdAt: number;
+  lastUpdated: number;
+  stages: {
+    standing?: StandingField;
+    cutting?: CuttingField;
+    chopped?: ChoppedField;
+  };
+};
 
 export type HarvestField = {
   id: string;
@@ -108,6 +129,44 @@ async function writeList<T>(key: string, items: T[]): Promise<void> {
   await AsyncStorage.setItem(key, JSON.stringify(items));
 }
 
+export async function getFieldList(): Promise<Field[]> {
+  return readList<Field>(KEYS.fieldList);
+}
+
+export async function addField(field: Field): Promise<void> {
+  const all = await getFieldList();
+  if (all.some((f) => f.code === field.code)) return;
+  all.unshift(field);
+  await writeList(KEYS.fieldList, all);
+}
+
+export async function deleteField(code: string): Promise<void> {
+  const all = await getFieldList();
+  await writeList(
+    KEYS.fieldList,
+    all.filter((f) => f.code !== code),
+  );
+  const captures = await getFields();
+  await writeList(
+    KEYS.fields,
+    captures.filter((c) => c.fieldCode !== code),
+  );
+}
+
+export async function getNextFieldCode(): Promise<string> {
+  const all = await getFieldList();
+  let max = 0;
+  for (const f of all) {
+    const m = f.code.match(/AP-KNL-(\d+)/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > max) max = n;
+    }
+  }
+  const next = (max + 1).toString().padStart(3, "0");
+  return `AP-KNL-${next}`;
+}
+
 export async function getFields(): Promise<FieldRecord[]> {
   return readList<FieldRecord>(KEYS.fields);
 }
@@ -116,6 +175,42 @@ export async function saveField(field: FieldRecord): Promise<void> {
   const all = await getFields();
   all.unshift(field);
   await writeList(KEYS.fields, all);
+  await addField({ code: field.fieldCode, createdAt: field.createdAt });
+}
+
+export async function getFieldGroups(): Promise<FieldGroup[]> {
+  const [list, captures] = await Promise.all([getFieldList(), getFields()]);
+  const map = new Map<string, FieldGroup>();
+  for (const f of list) {
+    map.set(f.code, {
+      code: f.code,
+      createdAt: f.createdAt,
+      lastUpdated: f.createdAt,
+      stages: {},
+    });
+  }
+  for (const c of captures) {
+    let group = map.get(c.fieldCode);
+    if (!group) {
+      group = {
+        code: c.fieldCode,
+        createdAt: c.createdAt,
+        lastUpdated: c.createdAt,
+        stages: {},
+      };
+      map.set(c.fieldCode, group);
+    }
+    group.lastUpdated = Math.max(group.lastUpdated, c.createdAt);
+    if (c.stage === "standing") group.stages.standing = c;
+    if (c.stage === "cutting") group.stages.cutting = c;
+    if (c.stage === "chopped") group.stages.chopped = c;
+  }
+  return Array.from(map.values()).sort((a, b) => b.lastUpdated - a.lastUpdated);
+}
+
+export async function getFieldGroup(code: string): Promise<FieldGroup | null> {
+  const all = await getFieldGroups();
+  return all.find((g) => g.code === code) || null;
 }
 
 export async function getHarvestFields(): Promise<HarvestField[]> {

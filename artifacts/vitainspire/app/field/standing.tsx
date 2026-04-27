@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,17 +14,21 @@ export default function StandingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const params = useLocalSearchParams<{ fieldCode?: string }>();
+  const fieldCode = String(params.fieldCode || "");
   const [plant, setPlant] = useState<string | null>(null);
   const [leaf, setLeaf] = useState<string | null>(null);
   const [cob, setCob] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const canSave = !!plant || !!leaf || !!cob;
+  const canSave = !!fieldCode && (!!plant || !!leaf || !!cob);
 
   const onSave = async () => {
+    if (!fieldCode) return;
     setSaving(true);
     const record: StandingField = {
       id: makeId(),
+      fieldCode,
       stage: "standing",
       createdAt: Date.now(),
       plantPhoto: plant,
@@ -49,6 +53,11 @@ export default function StandingScreen() {
       }}
     >
       <View style={styles.headerWrap}>
+        {fieldCode ? (
+          <Text style={[styles.eyebrow, { color: colors.accent }]}>
+            {fieldCode}
+          </Text>
+        ) : null}
         <Text style={[styles.title, { color: colors.foreground }]}>
           Standing Crop
         </Text>
@@ -74,6 +83,11 @@ export default function StandingScreen() {
 
 const styles = StyleSheet.create({
   headerWrap: { gap: 6 },
+  eyebrow: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 1.2,
+  },
   title: {
     fontSize: 26,
     fontFamily: "Inter_700Bold",

@@ -35,6 +35,11 @@ function RootLayoutNav() {
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="field/new" options={{ title: "New Field" }} />
+      <Stack.Screen
+        name="field/timeline/[code]"
+        options={{ title: "Field Timeline" }}
+      />
       <Stack.Screen
         name="field/standing"
         options={{ title: "Standing Crop" }}

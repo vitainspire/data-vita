@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,6 +30,8 @@ export default function CuttingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const params = useLocalSearchParams<{ fieldCode?: string }>();
+  const fieldCode = String(params.fieldCode || "");
   const [step, setStep] = useState(0);
   const [zoneA, setZoneA] = useState<ZoneData>({ ...EMPTY_ZONE });
   const [zoneB, setZoneB] = useState<ZoneData>({ ...EMPTY_ZONE });
@@ -50,9 +52,11 @@ export default function CuttingScreen() {
       setStep(step + 1);
       return;
     }
+    if (!fieldCode) return;
     setSaving(true);
     const record: CuttingField = {
       id: makeId(),
+      fieldCode,
       stage: "cutting",
       createdAt: Date.now(),
       zoneA,
@@ -76,6 +80,11 @@ export default function CuttingScreen() {
         gap: 22,
       }}
     >
+      {fieldCode ? (
+        <Text style={[styles.eyebrow, { color: colors.accent }]}>
+          {fieldCode}
+        </Text>
+      ) : null}
       <StepHeader
         title={meta.title}
         subtitle={meta.subtitle}
@@ -143,6 +152,11 @@ export default function CuttingScreen() {
 }
 
 const styles = StyleSheet.create({
+  eyebrow: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 1.2,
+  },
   footer: {
     flexDirection: "row",
     gap: 10,

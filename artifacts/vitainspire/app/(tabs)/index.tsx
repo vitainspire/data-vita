@@ -1,52 +1,29 @@
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
-import { FieldRecord, getFields } from "@/lib/storage";
+import { FieldGroup, FieldStage, getFieldGroups } from "@/lib/storage";
 
-const STAGES: Array<{
-  key: "standing" | "cutting" | "chopped";
-  title: string;
-  description: string;
+const STAGE_ORDER: Array<{
+  key: FieldStage;
+  label: string;
   icon: keyof typeof Feather.glyphMap;
-  route: "/field/standing" | "/field/cutting" | "/field/chopped";
 }> = [
-  {
-    key: "standing",
-    title: "Standing Crop",
-    description: "Capture plant, leaf and cob photos",
-    icon: "feather",
-    route: "/field/standing",
-  },
-  {
-    key: "cutting",
-    title: "Cutting Stage",
-    description: "Guided walk across three field zones",
-    icon: "scissors",
-    route: "/field/cutting",
-  },
-  {
-    key: "chopped",
-    title: "Chopped Stage",
-    description: "Record chopped material and quality",
-    icon: "grid",
-    route: "/field/chopped",
-  },
+  { key: "standing", label: "Standing", icon: "feather" },
+  { key: "cutting", label: "Cutting", icon: "scissors" },
+  { key: "chopped", label: "Chopped", icon: "grid" },
 ];
-
-function formatStage(stage: string) {
-  return stage.charAt(0).toUpperCase() + stage.slice(1);
-}
 
 function relTime(ts: number) {
   const diff = Date.now() - ts;
@@ -63,13 +40,14 @@ export default function FieldCaptureTab() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [fields, setFields] = useState<FieldRecord[]>([]);
+  const [groups, setGroups] = useState<FieldGroup[]>([]);
+  const [query, setQuery] = useState("");
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      getFields().then((f) => {
-        if (alive) setFields(f);
+      getFieldGroups().then((g) => {
+        if (alive) setGroups(g);
       });
       return () => {
         alive = false;
@@ -81,6 +59,17 @@ export default function FieldCaptureTab() {
   const topPad = isWeb ? 67 : insets.top + 8;
   const bottomPad = isWeb ? 100 : insets.bottom + 100;
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter((g) => g.code.toLowerCase().includes(q));
+  }, [groups, query]);
+
+  const completedCount = (g: FieldGroup) =>
+    (g.stages.standing ? 1 : 0) +
+    (g.stages.cutting ? 1 : 0) +
+    (g.stages.chopped ? 1 : 0);
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -88,71 +77,67 @@ export default function FieldCaptureTab() {
         paddingTop: topPad,
         paddingBottom: bottomPad,
         paddingHorizontal: 20,
+        gap: 18,
       }}
+      keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.headerWrap}>
+      <View style={{ gap: 6 }}>
         <Text style={[styles.eyebrow, { color: colors.accent }]}>
           FIELD CAPTURE
         </Text>
         <Text style={[styles.title, { color: colors.foreground }]}>
-          What are you capturing today?
+          Your fields
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Choose the lifecycle stage to start a new capture.
+          Track each field through Standing, Cutting and Chopped stages.
         </Text>
       </View>
 
-      <View style={styles.stages}>
-        {STAGES.map((stage) => (
-          <Pressable
-            key={stage.key}
-            onPress={() => router.push(stage.route)}
-            style={({ pressed }) => [
-              styles.stageCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderRadius: colors.radius,
-                opacity: pressed ? 0.92 : 1,
-                transform: [{ scale: pressed ? 0.99 : 1 }],
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.stageIcon,
-                {
-                  backgroundColor: colors.muted,
-                  borderRadius: colors.radius - 4,
-                },
-              ]}
-            >
-              <Feather name={stage.icon} size={24} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={[styles.stageTitle, { color: colors.foreground }]}>
-                {stage.title}
-              </Text>
-              <Text
-                style={[styles.stageDesc, { color: colors.mutedForeground }]}
-              >
-                {stage.description}
-              </Text>
-            </View>
-            <Feather
-              name="chevron-right"
-              size={22}
-              color={colors.mutedForeground}
-            />
+      <View
+        style={[
+          styles.searchRow,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderRadius: colors.radius,
+          },
+        ]}
+      >
+        <Feather name="search" size={18} color={colors.mutedForeground} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search by Field ID (e.g. AP-KNL-001)"
+          placeholderTextColor={colors.mutedForeground}
+          autoCapitalize="characters"
+          style={[styles.searchInput, { color: colors.foreground }]}
+        />
+        {query.length > 0 ? (
+          <Pressable onPress={() => setQuery("")} hitSlop={10}>
+            <Feather name="x" size={18} color={colors.mutedForeground} />
           </Pressable>
-        ))}
+        ) : null}
       </View>
 
-      <View style={styles.recentWrap}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-          Recent captures
+      <Pressable
+        onPress={() => router.push("/field/new")}
+        style={({ pressed }) => [
+          styles.newBtn,
+          {
+            backgroundColor: colors.primary,
+            borderRadius: colors.radius,
+            opacity: pressed ? 0.92 : 1,
+          },
+        ]}
+      >
+        <Feather name="plus-circle" size={18} color={colors.primaryForeground} />
+        <Text style={[styles.newBtnText, { color: colors.primaryForeground }]}>
+          New Field
         </Text>
-        {fields.length === 0 ? (
+      </Pressable>
+
+      <View style={{ gap: 10 }}>
+        {filtered.length === 0 ? (
           <View
             style={[
               styles.empty,
@@ -163,71 +148,117 @@ export default function FieldCaptureTab() {
               },
             ]}
           >
-            <Feather name="inbox" size={28} color={colors.mutedForeground} />
-            <Text
-              style={[styles.emptyTitle, { color: colors.foreground }]}
-            >
-              No captures yet
+            <Feather
+              name={query ? "search" : "map"}
+              size={28}
+              color={colors.mutedForeground}
+            />
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+              {query ? "No matching fields" : "No fields yet"}
             </Text>
             <Text
               style={[styles.emptyText, { color: colors.mutedForeground }]}
             >
-              Pick a stage above to start your first field capture.
+              {query
+                ? "Try a different Field ID or clear the search."
+                : "Tap “New Field” above to register your first plot."}
             </Text>
           </View>
         ) : (
-          <View style={{ gap: 10 }}>
-            {fields.slice(0, 8).map((f) => (
-              <View
-                key={f.id}
-                style={[
-                  styles.recordCard,
+          filtered.map((g) => {
+            const done = completedCount(g);
+            return (
+              <Pressable
+                key={g.code}
+                onPress={() => router.push(`/field/timeline/${g.code}`)}
+                style={({ pressed }) => [
+                  styles.fieldCard,
                   {
                     backgroundColor: colors.card,
                     borderColor: colors.border,
                     borderRadius: colors.radius,
+                    opacity: pressed ? 0.94 : 1,
                   },
                 ]}
               >
-                <View
-                  style={[
-                    styles.recordIcon,
-                    {
-                      backgroundColor: colors.muted,
-                      borderRadius: colors.radius - 4,
-                    },
-                  ]}
-                >
-                  <Feather
-                    name={
-                      f.stage === "standing"
-                        ? "feather"
-                        : f.stage === "cutting"
-                          ? "scissors"
-                          : "grid"
-                    }
-                    size={18}
-                    color={colors.primary}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[styles.recordTitle, { color: colors.foreground }]}
-                  >
-                    {formatStage(f.stage)} capture
-                  </Text>
-                  <Text
+                <View style={styles.fieldHeader}>
+                  <View
                     style={[
-                      styles.recordSub,
-                      { color: colors.mutedForeground },
+                      styles.fieldBadge,
+                      {
+                        backgroundColor: colors.muted,
+                        borderRadius: colors.radius - 4,
+                      },
                     ]}
                   >
-                    {relTime(f.createdAt)}
-                  </Text>
+                    <Feather name="map-pin" size={18} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[styles.fieldCode, { color: colors.foreground }]}
+                    >
+                      {g.code}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.fieldMeta,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      {done}/3 stages · Updated {relTime(g.lastUpdated)}
+                    </Text>
+                  </View>
+                  <Feather
+                    name="chevron-right"
+                    size={20}
+                    color={colors.mutedForeground}
+                  />
                 </View>
-              </View>
-            ))}
-          </View>
+
+                <View style={styles.stageRow}>
+                  {STAGE_ORDER.map((s) => {
+                    const completed = !!g.stages[s.key];
+                    return (
+                      <View
+                        key={s.key}
+                        style={[
+                          styles.stagePill,
+                          {
+                            backgroundColor: completed
+                              ? colors.primary
+                              : colors.muted,
+                            borderRadius: colors.radius - 6,
+                          },
+                        ]}
+                      >
+                        <Feather
+                          name={completed ? "check-circle" : "clock"}
+                          size={13}
+                          color={
+                            completed
+                              ? colors.primaryForeground
+                              : colors.mutedForeground
+                          }
+                        />
+                        <Text
+                          style={[
+                            styles.stagePillText,
+                            {
+                              color: completed
+                                ? colors.primaryForeground
+                                : colors.mutedForeground,
+                            },
+                          ]}
+                        >
+                          {s.label}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </Pressable>
+            );
+          })
         )}
       </View>
     </ScrollView>
@@ -235,10 +266,6 @@ export default function FieldCaptureTab() {
 }
 
 const styles = StyleSheet.create({
-  headerWrap: {
-    gap: 6,
-    marginBottom: 22,
-  },
   eyebrow: {
     fontSize: 12,
     fontFamily: "Inter_600SemiBold",
@@ -254,40 +281,33 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     lineHeight: 21,
   },
-  stages: {
-    gap: 12,
-    marginBottom: 28,
-  },
-  stageCard: {
+  searchRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    gap: 14,
+    gap: 10,
+    paddingHorizontal: 14,
+    height: 48,
     borderWidth: 1,
   },
-  stageIcon: {
-    width: 50,
-    height: 50,
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: "Inter_500Medium",
+    height: "100%",
+  },
+  newBtn: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
+    height: 50,
   },
-  stageTitle: {
-    fontSize: 17,
+  newBtnText: {
+    fontSize: 15,
     fontFamily: "Inter_600SemiBold",
   },
-  stageDesc: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-  },
-  recentWrap: {
-    gap: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
-  },
   empty: {
-    padding: 24,
+    padding: 28,
     alignItems: "center",
     gap: 8,
     borderWidth: 1,
@@ -302,25 +322,46 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     textAlign: "center",
   },
-  recordCard: {
+  fieldCard: {
+    padding: 16,
+    gap: 14,
+    borderWidth: 1,
+  },
+  fieldHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 14,
-    borderWidth: 1,
   },
-  recordIcon: {
-    width: 38,
-    height: 38,
+  fieldBadge: {
+    width: 40,
+    height: 40,
     alignItems: "center",
     justifyContent: "center",
   },
-  recordTitle: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
+  fieldCode: {
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 0.3,
   },
-  recordSub: {
+  fieldMeta: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",
+    marginTop: 2,
+  },
+  stageRow: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  stagePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  stagePillText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
   },
 });
