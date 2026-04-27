@@ -60,9 +60,10 @@ export default function FieldCaptureTab() {
   const bottomPad = isWeb ? 100 : insets.bottom + 100;
 
   const filtered = useMemo(() => {
+    const valid = groups.filter((g) => g && typeof g.code === "string" && g.code);
     const q = query.trim().toLowerCase();
-    if (!q) return groups;
-    return groups.filter((g) => g.code.toLowerCase().includes(q));
+    if (!q) return valid;
+    return valid.filter((g) => g.code.toLowerCase().includes(q));
   }, [groups, query]);
 
   const completedCount = (g: FieldGroup) =>

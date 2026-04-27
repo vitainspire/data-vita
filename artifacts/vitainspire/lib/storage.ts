@@ -172,6 +172,9 @@ export async function getFields(): Promise<FieldRecord[]> {
 }
 
 export async function saveField(field: FieldRecord): Promise<void> {
+  if (!field.fieldCode) {
+    throw new Error("saveField requires a fieldCode");
+  }
   const all = await getFields();
   all.unshift(field);
   await writeList(KEYS.fields, all);
@@ -182,25 +185,27 @@ export async function getFieldGroups(): Promise<FieldGroup[]> {
   const [list, captures] = await Promise.all([getFieldList(), getFields()]);
   const map = new Map<string, FieldGroup>();
   for (const f of list) {
+    if (!f || typeof f.code !== "string" || !f.code) continue;
     map.set(f.code, {
       code: f.code,
-      createdAt: f.createdAt,
-      lastUpdated: f.createdAt,
+      createdAt: f.createdAt || Date.now(),
+      lastUpdated: f.createdAt || Date.now(),
       stages: {},
     });
   }
   for (const c of captures) {
+    if (!c || typeof c.fieldCode !== "string" || !c.fieldCode) continue;
     let group = map.get(c.fieldCode);
     if (!group) {
       group = {
         code: c.fieldCode,
-        createdAt: c.createdAt,
-        lastUpdated: c.createdAt,
+        createdAt: c.createdAt || Date.now(),
+        lastUpdated: c.createdAt || Date.now(),
         stages: {},
       };
       map.set(c.fieldCode, group);
     }
-    group.lastUpdated = Math.max(group.lastUpdated, c.createdAt);
+    group.lastUpdated = Math.max(group.lastUpdated, c.createdAt || 0);
     if (c.stage === "standing") group.stages.standing = c;
     if (c.stage === "cutting") group.stages.cutting = c;
     if (c.stage === "chopped") group.stages.chopped = c;
