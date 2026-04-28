@@ -36,17 +36,34 @@ function doGet(e) {
 //   Sheet rows    → { type: "rows", sheetName, headers, rows }
 function doPost(e) {
   try {
-    const data   = JSON.parse(e.postData.contents);
-    const folder = getOrCreateFolder();
-    const ss     = getOrCreateSpreadsheet(folder);
+    const data = JSON.parse(e.postData.contents);
 
-    if (data.base64)        return handleAppImage_(data, folder);
-    if (data.type === 'rows') return handleAppRows_(data, ss);
+    // Sheet row writes never need Drive — keep them independent so Drive
+    // quota/errors on concurrent image uploads don't block sheet writes.
+    if (data.type === 'rows') {
+      const ss = getSpreadsheetDirect_();
+      return handleAppRows_(data, ss);
+    }
+
+    if (data.base64) {
+      const folder = getOrCreateFolder();
+      return handleAppImage_(data, folder);
+    }
 
     return jsonOut_({ status: 'error', message: 'Unknown payload type' });
   } catch (err) {
     return jsonOut_({ status: 'error', message: err.toString() });
   }
+}
+
+// Returns the spreadsheet without touching Drive when SPREADSHEET_ID is set.
+// Falls back to folder-based lookup only when no ID is configured.
+function getSpreadsheetDirect_() {
+  if (CONFIG.SPREADSHEET_ID) {
+    return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  }
+  const folder = getOrCreateFolder();
+  return getOrCreateSpreadsheet(folder);
 }
 
 // ============================================================
