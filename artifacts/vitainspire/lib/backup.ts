@@ -49,6 +49,7 @@ function fmt(ts: number | undefined): string {
   return new Date(ts).toLocaleString();
 }
 
+// Throws on failure so errors are visible in the sync state.
 async function uploadImage(
   uri: string | null,
   fileName: string,
@@ -57,18 +58,32 @@ async function uploadImage(
   if (!uri || !BACKUP_URL) return "";
   const base64 = await uriToBase64(uri);
   if (!base64) return "";
-  try {
-    const res = await fetch(BACKUP_URL, {
-      method: "POST",
-      redirect: "follow",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({ base64, fileName, mimeType: "image/jpeg", metadata: metadata ?? {} }),
-    });
-    const json = (await res.json()) as { status: string; url?: string };
-    return json.status === "success" ? (json.url ?? "") : "";
-  } catch {
-    return "";
+  const res = await fetch(BACKUP_URL, {
+    method: "POST",
+    redirect: "follow",
+    headers: { "Content-Type": "text/plain" },
+    body: JSON.stringify({ base64, fileName, mimeType: "image/jpeg", metadata: metadata ?? {} }),
+  });
+  const text = await res.text();
+  let json: { status: string; url?: string; message?: string };
+  try { json = JSON.parse(text); } catch { throw new Error(`${fileName}: bad response`); }
+  if (json.status !== "success") {
+    throw new Error(`${fileName}: ${json.message ?? "upload failed"}`);
   }
+  return json.url ?? "";
+}
+
+// Safe wrapper — returns "" and collects the error instead of throwing.
+function img(
+  errors: string[],
+  uri: string | null,
+  fileName: string,
+  metadata?: Record<string, string>
+): Promise<string> {
+  return uploadImage(uri, fileName, metadata).catch((e: unknown) => {
+    errors.push(e instanceof Error ? e.message : String(e));
+    return "";
+  });
 }
 
 async function writeSheet(
@@ -145,15 +160,19 @@ export async function runBackup(): Promise<{ ok: boolean; error?: string }> {
         .join(", ") || "—",
     ]);
 
+    const imageErrors: string[] = [];
+    const u = (uri: string | null, name: string, meta?: Record<string, string>) =>
+      img(imageErrors, uri, name, meta);
+
     // ── Standing captures ──
     const standingFields = fields.filter((f): f is StandingField => f.stage === "standing");
     const standingRows = await Promise.all(
       standingFields.map(async (f) => {
         const id = fid(f.fieldCode);
         const [plant, leaf, cob] = await Promise.all([
-          uploadImage(f.plantPhoto, `${id}_standing-plant.jpg`),
-          uploadImage(f.leafPhoto,  `${id}_standing-leafcob.jpg`),
-          uploadImage(f.cobPhoto,   `${id}_standing-cob.jpg`),
+          u(f.plantPhoto, `${id}_standing-plant.jpg`),
+          u(f.leafPhoto,  `${id}_standing-leafcob.jpg`),
+          u(f.cobPhoto,   `${id}_standing-cob.jpg`),
         ]);
         return [f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt), plant, leaf, cob];
       })
@@ -165,12 +184,12 @@ export async function runBackup(): Promise<{ ok: boolean; error?: string }> {
       cuttingFields.map(async (f) => {
         const id = fid(f.fieldCode);
         const [zaPlant, zaCob, zbPlant, zbCob, zcPlant, zcCob] = await Promise.all([
-          uploadImage(f.zoneA?.plantPhoto ?? null, `${id}_zoneA-plant.jpg`),
-          uploadImage(f.zoneA?.cobPhoto   ?? null, `${id}_zoneA-cob.jpg`),
-          uploadImage(f.zoneB?.plantPhoto ?? null, `${id}_zoneB-plant.jpg`),
-          uploadImage(f.zoneB?.cobPhoto   ?? null, `${id}_zoneB-cob.jpg`),
-          uploadImage(f.zoneC?.plantPhoto ?? null, `${id}_zoneC-plant.jpg`),
-          uploadImage(f.zoneC?.cobPhoto   ?? null, `${id}_zoneC-cob.jpg`),
+          u(f.zoneA?.plantPhoto ?? null, `${id}_zoneA-plant.jpg`),
+          u(f.zoneA?.cobPhoto   ?? null, `${id}_zoneA-cob.jpg`),
+          u(f.zoneB?.plantPhoto ?? null, `${id}_zoneB-plant.jpg`),
+          u(f.zoneB?.cobPhoto   ?? null, `${id}_zoneB-cob.jpg`),
+          u(f.zoneC?.plantPhoto ?? null, `${id}_zoneC-plant.jpg`),
+          u(f.zoneC?.cobPhoto   ?? null, `${id}_zoneC-cob.jpg`),
         ]);
         return [
           f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
@@ -187,7 +206,7 @@ export async function runBackup(): Promise<{ ok: boolean; error?: string }> {
     const choppedRows = await Promise.all(
       choppedFields.map(async (f) => {
         const id = fid(f.fieldCode);
-        const photo = await uploadImage(f.photo, `${id}_chopped_photo.jpg`);
+        const photo = await u(f.photo, `${id}_chopped_photo.jpg`);
         return [
           f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
           photo, f.chopLength ?? "", f.uniformity ?? "", f.materialQuality ?? "", f.moisture ?? "",
@@ -196,14 +215,14 @@ export async function runBackup(): Promise<{ ok: boolean; error?: string }> {
     );
 
     // ── Harvest field visits ──
-    const farmerUrl = await uploadImage(farmerPhotoUri, "farmer-profile_farmer.jpg");
+    const farmerUrl = await u(farmerPhotoUri, "farmer-profile_farmer.jpg");
     const harvestFieldRows = await Promise.all(
       harvestFields.map(async (hf) => {
         const shortId = hf.id.substring(0, 8);
         const [overview, leaf, cob] = await Promise.all([
-          uploadImage(hf.photos?.overview ?? null, `HVT-${shortId}_harvest-overview.jpg`),
-          uploadImage(hf.photos?.leaf     ?? null, `HVT-${shortId}_harvest-leaf.jpg`),
-          uploadImage(hf.photos?.cob      ?? null, `HVT-${shortId}_harvest-cob.jpg`),
+          u(hf.photos?.overview ?? null, `HVT-${shortId}_harvest-overview.jpg`),
+          u(hf.photos?.leaf     ?? null, `HVT-${shortId}_harvest-leaf.jpg`),
+          u(hf.photos?.cob      ?? null, `HVT-${shortId}_harvest-cob.jpg`),
         ]);
         return [
           hf.id, fmt(hf.createdAt), hf.fieldArea, hf.cropType,
@@ -225,10 +244,10 @@ export async function runBackup(): Promise<{ ok: boolean; error?: string }> {
         const smpId = `SMP-${b.id.substring(0, 8)}`;
         const meta = { fieldId: b.harvestFieldId.substring(0, 8) };
         const [storage, cross, sample, texture] = await Promise.all([
-          uploadImage(b.photos?.storage      ?? null, `${smpId}_silage-storage.jpg`,       meta),
-          uploadImage(b.photos?.crossSection ?? null, `${smpId}_silage-cross-section.jpg`, meta),
-          uploadImage(b.photos?.sample       ?? null, `${smpId}_silage-sample.jpg`,        meta),
-          uploadImage(b.photos?.texture      ?? null, `${smpId}_silage-texture.jpg`,       meta),
+          u(b.photos?.storage      ?? null, `${smpId}_silage-storage.jpg`,       meta),
+          u(b.photos?.crossSection ?? null, `${smpId}_silage-cross-section.jpg`, meta),
+          u(b.photos?.sample       ?? null, `${smpId}_silage-sample.jpg`,        meta),
+          u(b.photos?.texture      ?? null, `${smpId}_silage-texture.jpg`,       meta),
         ]);
         return [
           b.id, b.batchName, fmt(b.createdAt), b.harvestFieldId,
@@ -273,8 +292,9 @@ export async function runBackup(): Promise<{ ok: boolean; error?: string }> {
       "Storage Photo", "Cross Section", "Sample Bag", "Texture",
     ], postHarvestRows);
 
-    if (sheetErrors.length > 0) {
-      return { ok: false, error: sheetErrors.join(" | ") };
+    const allErrors = [...sheetErrors, ...imageErrors];
+    if (allErrors.length > 0) {
+      return { ok: false, error: allErrors.join(" | ") };
     }
 
     return { ok: true };

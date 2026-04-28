@@ -304,16 +304,23 @@ function saveImageToDrive(base64Data, fileName, mimeType, folder) {
 // HELPERS
 // ============================================================
 function resolvePath_(root, pathParts) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    return pathParts.reduce((folder, part) => {
-      const it = folder.getFoldersByName(part);
-      return it.hasNext() ? it.next() : folder.createFolder(part);
-    }, root);
-  } finally {
-    lock.releaseLock();
-  }
+  return pathParts.reduce((folder, part) => {
+    // Fast path: folder already exists — no lock needed
+    const it = folder.getFoldersByName(part);
+    if (it.hasNext()) return it.next();
+
+    // Slow path: need to create — lock to prevent race conditions
+    const lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      // Re-check after acquiring lock (another request may have just created it)
+      const it2 = folder.getFoldersByName(part);
+      if (it2.hasNext()) return it2.next();
+      return folder.createFolder(part);
+    } finally {
+      lock.releaseLock();
+    }
+  }, root);
 }
 
 // Creates/finds a sheet tab used by the app backup (no fixed columns)
