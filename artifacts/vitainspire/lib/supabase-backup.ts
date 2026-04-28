@@ -17,6 +17,14 @@ import {
   getHarvestRecords,
   getPostHarvestBatches,
 } from "./storage";
+import {
+  buildChoppedPath,
+  buildCuttingPath,
+  buildFarmerProfilePath,
+  buildHarvestVisitPath,
+  buildPostHarvestPath,
+  buildStandingPath,
+} from "./supabase-storage-paths";
 
 // Supabase configuration
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -70,7 +78,7 @@ async function uriToBlob(uri: string): Promise<Blob | null> {
 
 async function uploadImageToSupabase(
   uri: string | null,
-  fileName: string,
+  objectPath: string,
   bucket: string = "images"
 ): Promise<string> {
   if (!uri) return "";
@@ -84,40 +92,25 @@ async function uploadImageToSupabase(
   try {
     const blob = await uriToBlob(uri);
     if (!blob) return "";
-    
-    // Check if file already exists
-    const { data: existingFile } = await client.storage
-      .from(bucket)
-      .list('', { search: fileName });
-    
-    if (existingFile && existingFile.length > 0) {
-      const { data } = client.storage
-        .from(bucket)
-        .getPublicUrl(fileName);
-      return data.publicUrl;
-    }
-    
-    // Upload new file
     const { data, error } = await client.storage
       .from(bucket)
-      .upload(fileName, blob, {
+      .upload(objectPath, blob, {
         contentType: 'image/jpeg',
         upsert: true
       });
     
     if (error) {
-      console.error(`Upload error for ${fileName}:`, error);
+      console.error(`Upload error for ${objectPath}:`, error);
       return "";
     }
     
-    // Get public URL
     const { data: urlData } = client.storage
       .from(bucket)
-      .getPublicUrl(fileName);
+      .getPublicUrl(objectPath);
     
     return urlData.publicUrl;
   } catch (error) {
-    console.error(`Failed to upload ${fileName}:`, error);
+    console.error(`Failed to upload ${objectPath}:`, error);
     return "";
   }
 }
@@ -154,21 +147,20 @@ async function upsertStandingFields(fields: StandingField[]): Promise<void> {
   // Upload images first
   const fieldsWithUrls = await Promise.all(
     fields.map(async (f) => {
-      const fieldId = `${f.fieldCode}_standing`;
       const [
         zaPlantUrl, zaLeafUrl, zaCobUrl,
         zbPlantUrl, zbLeafUrl, zbCobUrl,
         zcPlantUrl, zcLeafUrl, zcCobUrl
       ] = await Promise.all([
-        uploadImageToSupabase(f.zoneA?.plantPhoto, `${fieldId}_zoneA_plant.jpg`),
-        uploadImageToSupabase(f.zoneA?.leafPhoto, `${fieldId}_zoneA_leaf.jpg`),
-        uploadImageToSupabase(f.zoneA?.cobPhoto, `${fieldId}_zoneA_cob.jpg`),
-        uploadImageToSupabase(f.zoneB?.plantPhoto, `${fieldId}_zoneB_plant.jpg`),
-        uploadImageToSupabase(f.zoneB?.leafPhoto, `${fieldId}_zoneB_leaf.jpg`),
-        uploadImageToSupabase(f.zoneB?.cobPhoto, `${fieldId}_zoneB_cob.jpg`),
-        uploadImageToSupabase(f.zoneC?.plantPhoto, `${fieldId}_zoneC_plant.jpg`),
-        uploadImageToSupabase(f.zoneC?.leafPhoto, `${fieldId}_zoneC_leaf.jpg`),
-        uploadImageToSupabase(f.zoneC?.cobPhoto, `${fieldId}_zoneC_cob.jpg`),
+        uploadImageToSupabase(f.zoneA?.plantPhoto, buildStandingPath(f.id, "a", "plant")),
+        uploadImageToSupabase(f.zoneA?.leafPhoto, buildStandingPath(f.id, "a", "leaf")),
+        uploadImageToSupabase(f.zoneA?.cobPhoto, buildStandingPath(f.id, "a", "cob")),
+        uploadImageToSupabase(f.zoneB?.plantPhoto, buildStandingPath(f.id, "b", "plant")),
+        uploadImageToSupabase(f.zoneB?.leafPhoto, buildStandingPath(f.id, "b", "leaf")),
+        uploadImageToSupabase(f.zoneB?.cobPhoto, buildStandingPath(f.id, "b", "cob")),
+        uploadImageToSupabase(f.zoneC?.plantPhoto, buildStandingPath(f.id, "c", "plant")),
+        uploadImageToSupabase(f.zoneC?.leafPhoto, buildStandingPath(f.id, "c", "leaf")),
+        uploadImageToSupabase(f.zoneC?.cobPhoto, buildStandingPath(f.id, "c", "cob")),
       ]);
       
       return {
@@ -217,18 +209,17 @@ async function upsertCuttingFields(fields: CuttingField[]): Promise<void> {
   
   const fieldsWithUrls = await Promise.all(
     fields.map(async (f) => {
-      const fieldId = `${f.fieldCode}_cutting`;
       const [
         zaPlantUrl, zaCobUrl,
         zbPlantUrl, zbCobUrl,
         zcPlantUrl, zcCobUrl
       ] = await Promise.all([
-        uploadImageToSupabase(f.zoneA?.plantPhoto, `${fieldId}_zoneA_plant.jpg`),
-        uploadImageToSupabase(f.zoneA?.cobPhoto, `${fieldId}_zoneA_cob.jpg`),
-        uploadImageToSupabase(f.zoneB?.plantPhoto, `${fieldId}_zoneB_plant.jpg`),
-        uploadImageToSupabase(f.zoneB?.cobPhoto, `${fieldId}_zoneB_cob.jpg`),
-        uploadImageToSupabase(f.zoneC?.plantPhoto, `${fieldId}_zoneC_plant.jpg`),
-        uploadImageToSupabase(f.zoneC?.cobPhoto, `${fieldId}_zoneC_cob.jpg`),
+        uploadImageToSupabase(f.zoneA?.plantPhoto, buildCuttingPath(f.id, "a", "plant")),
+        uploadImageToSupabase(f.zoneA?.cobPhoto, buildCuttingPath(f.id, "a", "cob")),
+        uploadImageToSupabase(f.zoneB?.plantPhoto, buildCuttingPath(f.id, "b", "plant")),
+        uploadImageToSupabase(f.zoneB?.cobPhoto, buildCuttingPath(f.id, "b", "cob")),
+        uploadImageToSupabase(f.zoneC?.plantPhoto, buildCuttingPath(f.id, "c", "plant")),
+        uploadImageToSupabase(f.zoneC?.cobPhoto, buildCuttingPath(f.id, "c", "cob")),
       ]);
       
       return {
@@ -279,8 +270,7 @@ async function upsertChoppedFields(fields: ChoppedField[]): Promise<void> {
   
   const fieldsWithUrls = await Promise.all(
     fields.map(async (f) => {
-      const fieldId = `${f.fieldCode}_chopped`;
-      const photoUrl = await uploadImageToSupabase(f.photo, `${fieldId}_photo.jpg`);
+      const photoUrl = await uploadImageToSupabase(f.photo, buildChoppedPath(f.id));
       
       return {
         id: f.id,
@@ -312,15 +302,14 @@ async function upsertHarvestFields(fields: HarvestField[]): Promise<void> {
   
   // Upload farmer photo once
   const farmerPhotoUri = await getFarmerPhoto();
-  const farmerPhotoUrl = await uploadImageToSupabase(farmerPhotoUri, "farmer_profile.jpg");
+  const farmerPhotoUrl = await uploadImageToSupabase(farmerPhotoUri, buildFarmerProfilePath());
   
   const fieldsWithUrls = await Promise.all(
     fields.map(async (f) => {
-      const visitId = f.id.substring(0, 8);
       const [overviewUrl, leafUrl, cobUrl] = await Promise.all([
-        uploadImageToSupabase(f.photos?.overview, `harvest_${visitId}_overview.jpg`),
-        uploadImageToSupabase(f.photos?.leaf, `harvest_${visitId}_leaf.jpg`),
-        uploadImageToSupabase(f.photos?.cob, `harvest_${visitId}_cob.jpg`),
+        uploadImageToSupabase(f.photos?.overview, buildHarvestVisitPath(f.id, "overview")),
+        uploadImageToSupabase(f.photos?.leaf, buildHarvestVisitPath(f.id, "leaf")),
+        uploadImageToSupabase(f.photos?.cob, buildHarvestVisitPath(f.id, "cob")),
       ]);
       
       return {
@@ -376,12 +365,11 @@ async function upsertPostHarvestBatches(batches: PostHarvestBatch[]): Promise<vo
   
   const batchesWithUrls = await Promise.all(
     batches.map(async (b) => {
-      const batchId = b.id.substring(0, 8);
       const [storageUrl, crossSectionUrl, sampleUrl, textureUrl] = await Promise.all([
-        uploadImageToSupabase(b.photos?.storage, `postharvest_${batchId}_storage.jpg`),
-        uploadImageToSupabase(b.photos?.crossSection, `postharvest_${batchId}_cross_section.jpg`),
-        uploadImageToSupabase(b.photos?.sample, `postharvest_${batchId}_sample.jpg`),
-        uploadImageToSupabase(b.photos?.texture, `postharvest_${batchId}_texture.jpg`),
+        uploadImageToSupabase(b.photos?.storage, buildPostHarvestPath(b.id, "storage")),
+        uploadImageToSupabase(b.photos?.crossSection, buildPostHarvestPath(b.id, "cross-section")),
+        uploadImageToSupabase(b.photos?.sample, buildPostHarvestPath(b.id, "sample")),
+        uploadImageToSupabase(b.photos?.texture, buildPostHarvestPath(b.id, "texture")),
       ]);
       
       return {
@@ -440,15 +428,22 @@ export async function runSupabaseBackup(): Promise<{ ok: boolean; error?: string
     const cuttingFields = allFields.filter((f): f is CuttingField => f.stage === "cutting");
     const choppedFields = allFields.filter((f): f is ChoppedField => f.stage === "chopped");
     
-    // Upload all data
+    // Upload data in dependency order to avoid foreign key violations:
+    // fields -> field_captures
+    // harvest_visits -> harvest_records/post_harvest_batches
+    await upsertFields(fieldList);
+
     await Promise.all([
-      upsertFields(fieldList),
       upsertStandingFields(standingFields),
       upsertCuttingFields(cuttingFields),
       upsertChoppedFields(choppedFields),
-      upsertHarvestFields(harvestFields),
+    ]);
+
+    await upsertHarvestFields(harvestFields);
+
+    await Promise.all([
       upsertHarvestRecords(harvestRecords),
-      upsertPostHarvestBatches(postHarvestBatches)
+      upsertPostHarvestBatches(postHarvestBatches),
     ]);
     
     console.log("Supabase backup completed successfully");
@@ -470,88 +465,3 @@ export async function runSupabaseBackup(): Promise<{ ok: boolean; error?: string
   }
 }
 
-// ─── Test Function ────────────────────────────────────────────
-
-export async function testSupabaseConnection(): Promise<{ ok: boolean; error?: string; data?: any }> {
-  const client = getSupabaseClient();
-  if (!client) {
-    return { ok: false, error: "Supabase not configured" };
-  }
-  
-  try {
-    // Test database connection
-    const { data, error } = await client.from('fields').select('count');
-    
-    if (error) {
-      return { ok: false, error: `Database connection failed: ${error.message}` };
-    }
-    
-    // Test storage connection
-    const { data: buckets, error: storageError } = await client.storage.listBuckets();
-    
-    if (storageError) {
-      return { ok: false, error: `Storage connection failed: ${storageError.message}` };
-    }
-    
-    return { 
-      ok: true, 
-      data: { 
-        database: 'Connected',
-        storage: 'Connected',
-        buckets: buckets?.map(b => b.name) || []
-      }
-    };
-  } catch (error) {
-    return { ok: false, error: `Connection test failed: ${error}` };
-  }
-}
-
-export async function createTestData(): Promise<{ ok: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) {
-    return { ok: false, error: "Supabase not configured" };
-  }
-  
-  try {
-    const testFieldCode = `TEST-${Date.now()}`;
-    
-    // Insert test field
-    const { error: fieldError } = await client
-      .from('fields')
-      .insert({
-        code: testFieldCode,
-        label: 'Test Field',
-        location_code: 'TEST-LOC',
-        state: 'Test State',
-        district: 'Test District',
-        latitude: 12.9716,
-        longitude: 77.5946,
-        created_at: new Date().toISOString(),
-      });
-    
-    if (fieldError) {
-      return { ok: false, error: `Failed to insert test field: ${fieldError.message}` };
-    }
-    
-    // Insert test field capture
-    const { error: captureError } = await client
-      .from('field_captures')
-      .insert({
-        id: `test-${Date.now()}`,
-        field_code: testFieldCode,
-        stage: 'standing',
-        created_at: new Date().toISOString(),
-        plant_photo_url: '',
-        leaf_photo_url: '',
-        cob_photo_url: '',
-      });
-    
-    if (captureError) {
-      return { ok: false, error: `Failed to insert test capture: ${captureError.message}` };
-    }
-    
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: `Test data creation failed: ${error}` };
-  }
-}

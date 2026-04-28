@@ -1,150 +1,151 @@
 /**
- * Google Apps Script — Farming App Photo Bridge
+ * VitaInspire — Google Apps Script: Drive Image Upload
+ * Handles image uploads ONLY. Saves base64 photos to organised Drive folders.
  *
  * SETUP
  * ─────
- * 1. Go to https://script.google.com and create a NEW PROJECT
- * 2. Paste this entire file
- * 3. Create a root folder in Google Drive named "Farming-App-Photos"
- * 4. In the Apps Script editor: Project Settings → Script Properties
- *    Add property: ROOT_FOLDER_ID = <your Drive folder ID>
- * 5. Run setupDrive() once from the editor → Allow permissions
- * 6. Deploy → New deployment → Web App
- *      Execute as : Me
- *      Who has access : Anyone
- * 7. Copy the Web App URL → add to your .env as EXPO_PUBLIC_DRIVE_URL
+ * 1. script.google.com → New Project → paste this file
+ * 2. Project Settings → Script Properties → add:
+ *      ROOT_FOLDER_ID = <ID from the Drive folder URL>
+ * 3. Select "setupDrive" in the Run dropdown → Run → Allow permissions
+ * 4. Deploy → New deployment → Web app
+ *      Execute as: Me  |  Who has access: Anyone
+ * 5. Copy the URL → paste into artifacts/vitainspire/.env as EXPO_PUBLIC_DRIVE_URL
  *
- * FOLDER STRUCTURE CREATED AUTOMATICALLY
- * ───────────────────────────────────────
- * Farming-App-Photos/
- *   farmers/
- *     <farmerName>/
- *       farmer-profile_<name>_<date>.jpg
- *   fields/
- *     <fieldId>/                          e.g. AP-ATP-001/
- *       standing/
- *         AP-ATP-001_maize_standing-plant_john_20240115-0930.jpg
- *         AP-ATP-001_maize_standing-leafcob_john_20240115-0931.jpg
- *       zones/
- *         AP-ATP-001_maize_zoneA-plant_ht-tall_col-dark_den-dense_20240115-0935.jpg
- *         AP-ATP-001_maize_zoneB-cob_ht-medium_col-medium_den-medium_20240115-0940.jpg
- *       cut/
- *         AP-ATP-001_maize_cut_yield-high_moist-optimal_stubble-medium_john_20240120-1100.jpg
- *       chopped/
- *         AP-ATP-001_maize_chopped_chop-fine_uni-uniform_qual-good_john_20240121-0800.jpg
- *       silage/
- *         SMP-20240122-XYZ_maize_silage-storage_store-pit_age-45days_pH-lt4.2_smell-pleasant_mold-none_20240122-1400.jpg
- *         SMP-20240122-XYZ_maize_silage-cross-section_...jpg
- *         SMP-20240122-XYZ_maize_silage-sample_...jpg
- *         SMP-20240122-XYZ_maize_silage-texture_...jpg
+ * FOLDER STRUCTURE
+ * ────────────────
+ * <Root>/
+ *   Farmers/
+ *     farmer-profile.jpg
+ *   Field Capture/
+ *     <fieldLabel>/
+ *       Standing/   zone A/B/C plant, leaf, cob photos
+ *       Cutting/    zone A/B/C plant, cob photos
+ *       Chopped/    chopped photo
+ *   Harvest/
+ *     <HVT-shortId>/
+ *       overview.jpg  leaf.jpg  cob.jpg
+ *   Post Harvest/
+ *     <SMP-shortId>/
+ *       storage.jpg  cross-section.jpg  sample.jpg  texture.jpg
  */
 
-// Set this in Project Settings → Script Properties (key: ROOT_FOLDER_ID)
-const ROOT_FOLDER_ID = PropertiesService.getScriptProperties().getProperty("ROOT_FOLDER_ID");
+// ─── Entry points ────────────────────────────────────────────
 
-// ─── One-time auth (run once from the editor) ─────────────────
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    if (!data.base64 || !data.fileName) {
+      throw new Error("Missing base64 or fileName");
+    }
+    return handleImage_(data);
+  } catch (err) {
+    return json_({ status: "error", message: err.toString() });
+  }
+}
+
+function doGet() {
+  return ContentService
+    .createTextOutput("✅ VitaInspire Drive Upload is ONLINE.")
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
+// Run once from the editor to verify Drive access
 function setupDrive() {
   DriveApp.getFolderById(ROOT_FOLDER_ID);
   Logger.log("✅ Drive auth OK – root folder accessible");
 }
 
-// ─── Folder helpers ───────────────────────────────────────────────────────────
+// ─── Image handler ───────────────────────────────────────────
 
-function getOrCreateFolder(parent, name) {
-  var it = parent.getFoldersByName(name);
-  return it.hasNext() ? it.next() : parent.createFolder(name);
+function handleImage_(data) {
+  var root      = getRootFolder_();
+  var pathParts = routePath_(data.fileName, data.metadata || {});
+  var folder    = resolvePath_(root, pathParts);
+
+  // Replace existing file so re-syncs don't duplicate
+  var existing = folder.getFilesByName(data.fileName);
+  while (existing.hasNext()) existing.next().setTrashed(true);
+
+  var clean = (data.base64 || "").replace(/^data:[^;]+;base64,/, "");
+  var blob  = Utilities.newBlob(
+    Utilities.base64Decode(clean),
+    data.mimeType || "image/jpeg",
+    data.fileName
+  );
+
+  var file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  return json_({
+    status  : "success",
+    url     : "https://drive.google.com/uc?export=view&id=" + file.getId(),
+    fileId  : file.getId(),
+    folder  : pathParts.join("/"),
+  });
 }
 
-function resolvePath(pathParts) {
-  var root = DriveApp.getFolderById(ROOT_FOLDER_ID);
-  return pathParts.reduce(function (folder, part) {
-    return getOrCreateFolder(folder, part);
-  }, root);
-}
+// ─── Folder routing ──────────────────────────────────────────
 
-// ─── Path routing ─────────────────────────────────────────────────────────────
-
-function folderPathForFile(fileName, metadata) {
+function routePath_(fileName, metadata) {
   var name = fileName.toLowerCase();
 
   // Farmer profile
-  if (name.indexOf("farmer-profile_") === 0) {
-    var parts = fileName.split("_");
-    var farmerName = parts[1] || "unknown-farmer";
-    return ["farmers", farmerName];
+  if (name.indexOf("farmer-profile") === 0) {
+    return ["Farmers"];
   }
 
-  // Silage — keyed by SMP-* prefix; fieldId must be in metadata
+  // Post Harvest (SMP- prefix) → Post Harvest/<SMP-shortId>/
   if (/^smp-/.test(name)) {
-    var fieldId = (metadata && metadata.fieldId) ? metadata.fieldId : "unknown-field";
-    return ["fields", fieldId, "silage"];
+    var smpId = fileName.split("_")[0] || "unknown";
+    return ["Post Harvest", smpId];
   }
 
-  // Field photos — first segment is the field ID (e.g. AP-ATP-001)
-  var fieldIdMatch = fileName.match(/^([A-Z]{2}-[A-Z]+-\d+)_/);
-  if (fieldIdMatch) {
-    var fid = fieldIdMatch[1];
-
-    if (name.indexOf("_standing-") !== -1) return ["fields", fid, "standing"];
-    if (name.indexOf("_zone") !== -1)      return ["fields", fid, "zones"];
-    if (name.indexOf("_cut_") !== -1)      return ["fields", fid, "cut"];
-    if (name.indexOf("_chopped_") !== -1)  return ["fields", fid, "chopped"];
-
-    return ["fields", fid];
+  // Harvest visit photos (HVT- prefix) → Harvest/<HVT-shortId>/
+  if (/^hvt-/.test(name)) {
+    var hvtId = fileName.split("_")[0] || "unknown";
+    return ["Harvest", hvtId];
   }
 
-  // Unknown — dump in misc
+  // Field Capture — metadata.stage tells us exactly which subfolder
+  // metadata = { stage: "standing" | "cutting" | "chopped", fieldId: "<label>" }
+  if (metadata.stage && metadata.fieldId) {
+    var stageName = metadata.stage.charAt(0).toUpperCase() + metadata.stage.slice(1);
+    return ["Field Capture", metadata.fieldId, stageName];
+  }
+
   return ["misc"];
 }
 
-// ─── Request handlers ─────────────────────────────────────────────────────────
+// ─── Drive helpers ───────────────────────────────────────────
 
-function doPost(e) {
-  try {
-    var data = JSON.parse(e.postData.contents);
+var ROOT_FOLDER_ID = "1RKGGAdJMIDxib2ONn-CEALhhoZYDPvTi";
 
-    var base64Data = data.base64;
-    var fileName   = data.fileName;
-    var mimeType   = data.mimeType || "image/jpeg";
-    var metadata   = data.metadata || {};
-
-    if (!base64Data || !fileName) {
-      throw new Error("Missing required fields: base64, fileName");
-    }
-
-    var bytes = Utilities.base64Decode(base64Data);
-    var blob  = Utilities.newBlob(bytes, mimeType, fileName);
-
-    var pathParts  = folderPathForFile(fileName, metadata);
-    var destFolder = resolvePath(pathParts);
-
-    var file = destFolder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
-    var viewUrl = "https://drive.google.com/uc?export=view&id=" + file.getId();
-
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        status   : "success",
-        url      : viewUrl,
-        fileId   : file.getId(),
-        folder   : pathParts.join("/"),
-        fileName : fileName,
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
-
-  } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        status  : "error",
-        message : err.toString(),
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+function getRootFolder_() {
+  return DriveApp.getFolderById(ROOT_FOLDER_ID);
 }
 
-function doGet(e) {
+// Lock only on folder creation — reads are lock-free so concurrent uploads
+// don't queue behind each other.
+function resolvePath_(root, pathParts) {
+  return pathParts.reduce(function(folder, part) {
+    var it = folder.getFoldersByName(part);
+    if (it.hasNext()) return it.next();            // fast path, no lock
+
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var it2 = folder.getFoldersByName(part);    // re-check after lock
+      if (it2.hasNext()) return it2.next();
+      return folder.createFolder(part);
+    } finally {
+      lock.releaseLock();
+    }
+  }, root);
+}
+
+function json_(obj) {
   return ContentService
-    .createTextOutput("✅ Farming App Photo Bridge is ONLINE.\nReady for POST requests.")
-    .setMimeType(ContentService.MimeType.TEXT);
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }

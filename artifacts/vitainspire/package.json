@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "pnpm exec expo start",
     "build": "expo export --platform web",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:storage-paths": "pnpm exec tsc scripts/supabase-storage-paths.test.ts lib/supabase-storage-paths.ts --outDir .tmp-tests --module commonjs --target es2020 --skipLibCheck --esModuleInterop && node .tmp-tests/scripts/supabase-storage-paths.test.js"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

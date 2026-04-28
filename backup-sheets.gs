@@ -11,12 +11,12 @@
  *  5. Copy the URL into artifacts/vitainspire/.env as EXPO_PUBLIC_SHEETS_URL
  */
 
-const SPREADSHEET_NAME = "v2-sheet";
+var SPREADSHEET_ID = "1ZRy62GwegHKR1MGcpZJoghuH1BjNp8qDgZ9OpSRujoU";
 
 // ─── One-time auth (run once from the editor) ─────────────────
 
 function setupSheets() {
-  var ss = getOrCreateSpreadsheet_();
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   Logger.log("✅ Sheets auth OK – " + ss.getUrl());
 }
 
@@ -47,20 +47,13 @@ function handleRows_(data) {
   var rows = data.rows || [];
   if (rows.length > 0 && !Array.isArray(rows[0])) rows = [rows];
   rows.forEach(function(row) { sheet.appendRow(row); });
-  return json_({ status: "success", sheetName: data.sheetName, rowCount: rows.length });
+  return json_({ status: "success", sheetName: data.sheetName, rowCount: rows.length, spreadsheetUrl: ss.getUrl() });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
 
 function getOrCreateSpreadsheet_() {
-  var props = PropertiesService.getScriptProperties();
-  var id    = props.getProperty("SPREADSHEET_ID");
-  if (id) {
-    try { return SpreadsheetApp.openById(id); } catch(e) {}
-  }
-  var ss = SpreadsheetApp.create(SPREADSHEET_NAME);
-  props.setProperty("SPREADSHEET_ID", ss.getId());
-  return ss;
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
 function getOrCreateSheet_(ss, name) {

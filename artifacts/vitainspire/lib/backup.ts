@@ -13,8 +13,8 @@ import {
   StandingField,
 } from "./storage";
 
-const BACKUP_URL = process.env.EXPO_PUBLIC_BACKUP_URL ?? "";
-const USE_SEPARATED_SERVICES = process.env.EXPO_PUBLIC_USE_SEPARATED_SERVICES === "true";
+const DRIVE_URL  = process.env.EXPO_PUBLIC_DRIVE_URL  ?? "";
+const SHEETS_URL = process.env.EXPO_PUBLIC_SHEETS_URL ?? "";
 
 export type BackupTarget =
   | "standing"
@@ -26,21 +26,7 @@ export type BackupTarget =
   | "full";
 
 export function isBackupConfigured(): boolean {
-  if (USE_SEPARATED_SERVICES) {
-    const driveUrl = process.env.EXPO_PUBLIC_DRIVE_URL ?? "";
-    const sheetsUrl = process.env.EXPO_PUBLIC_SHEETS_URL ?? "";
-    return driveUrl.length > 0 && sheetsUrl.length > 0;
-  }
-  
-  // Check for Google Apps Script
-  if (BACKUP_URL.length > 0) {
-    return true;
-  }
-  
-  // Check for Supabase fallback
-  const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
-  const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  return SUPABASE_URL.length > 0 && SUPABASE_KEY.length > 0;
+  return DRIVE_URL.length > 0 && SHEETS_URL.length > 0;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -73,74 +59,52 @@ function fmt(ts: number | undefined): string {
   return new Date(ts).toLocaleString();
 }
 
-// Throws on failure so callers can collect the error.
 async function uploadImage(
   uri: string | null,
   fileName: string,
   metadata?: Record<string, string>
 ): Promise<string> {
-  if (!uri || !BACKUP_URL) return "";
-  
+  if (!uri || !DRIVE_URL) return "";
+
+  const base64 = await uriToBase64(uri);
+  if (!base64) return "";
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
   try {
-    const base64 = await uriToBase64(uri);
-    if (!base64) return "";
-    
-    // Add timeout to prevent hanging uploads
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
-    try {
-      const res = await fetch(BACKUP_URL, {
-        method: "POST",
-        redirect: "follow",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({ base64, fileName, mimeType: "image/jpeg", metadata: metadata ?? {} }),
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      
-      const text = await res.text();
-      let json: { status: string; url?: string; message?: string };
-      try { json = JSON.parse(text); } catch { throw new Error(`${fileName}: bad response`); }
-      if (json.status !== "success") {
-        throw new Error(`${fileName}: ${json.message ?? "upload failed"}`);
-      }
-      return json.url ?? "";
-    } catch (error) {
-      clearTimeout(timeoutId);
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`${fileName}: upload timeout`);
-      }
-      throw error;
-    }
+    const res = await fetch(DRIVE_URL, {
+      method: "POST",
+      redirect: "follow",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ base64, fileName, mimeType: "image/jpeg", metadata: metadata ?? {} }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    const text = await res.text();
+    let json: { status: string; url?: string; message?: string };
+    try { json = JSON.parse(text); } catch { throw new Error(`${fileName}: bad response`); }
+    if (json.status !== "success") throw new Error(`${fileName}: ${json.message ?? "upload failed"}`);
+    return json.url ?? "";
   } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`${fileName}: upload timeout`);
+    }
     throw error;
   }
 }
 
-// Safe wrapper — returns "" and appends the error instead of throwing.
+// Safe wrapper — returns "" and collects errors instead of throwing.
 function img(
   errors: string[],
   uri: string | null,
   fileName: string,
   metadata?: Record<string, string>
 ): Promise<string> {
-  // Skip image upload if URI is null/empty to avoid Drive errors
-  if (!uri || uri.trim() === "") {
-    return Promise.resolve("");
-  }
-  
-  // Emergency fallback: skip all image uploads if SKIP_IMAGE_UPLOADS is set
-  if (process.env.SKIP_IMAGE_UPLOADS === "true") {
-    console.warn(`Skipping image upload for ${fileName} (SKIP_IMAGE_UPLOADS=true)`);
-    return Promise.resolve("");
-  }
-  
+  if (!uri || uri.trim() === "") return Promise.resolve("");
   return uploadImage(uri, fileName, metadata).catch((e: unknown) => {
-    const errorMsg = e instanceof Error ? e.message : String(e);
-    console.warn(`Image upload failed for ${fileName}: ${errorMsg}`);
-    errors.push(`Image upload failed: ${fileName} - ${errorMsg}`);
+    errors.push(`Image upload failed: ${fileName} – ${e instanceof Error ? e.message : String(e)}`);
     return "";
   });
 }
@@ -150,19 +114,15 @@ async function writeSheet(
   headers: string[],
   rows: unknown[][]
 ): Promise<void> {
-  if (!BACKUP_URL) return;
-  
-  // Sanitize rows to prevent Google Apps Script errors
-  const sanitizedRows = rows.map(row => 
-    row.map(cell => {
+  if (!SHEETS_URL) return;
+  const sanitizedRows = rows.map((row) =>
+    row.map((cell) => {
       if (cell === null || cell === undefined) return "";
-      if (typeof cell === "string") return cell;
-      if (typeof cell === "number") return cell;
+      if (typeof cell === "string" || typeof cell === "number") return cell;
       return String(cell);
     })
   );
-  
-  const res = await fetch(BACKUP_URL, {
+  const res = await fetch(SHEETS_URL, {
     method: "POST",
     redirect: "follow",
     headers: { "Content-Type": "text/plain" },
@@ -176,36 +136,9 @@ async function writeSheet(
   }
 }
 
-// ─── Supabase Fallback ──────────────────────────────────────
-
-async function runSupabaseFallback(): Promise<{ ok: boolean; error?: string }> {
-  console.log("🗄️ runSupabaseFallback called");
-  
-  try {
-    console.log("📦 Importing supabase-backup module...");
-    const { runSupabaseBackup, isSupabaseConfigured } = await import("./supabase-backup");
-    
-    console.log("🔧 Checking if Supabase is configured...");
-    if (!isSupabaseConfigured()) {
-      console.log("❌ Supabase not configured");
-      return { ok: false, error: "Supabase not configured" };
-    }
-    
-    console.log("✅ Supabase configured, running backup...");
-    const result = await runSupabaseBackup();
-    console.log("📊 Supabase backup result:", result);
-    return result;
-  } catch (error) {
-    console.log("❌ Supabase import/execution failed:", error);
-    return { ok: false, error: `Supabase import failed: ${error}` };
-  }
-}
-
 // ─── Google Apps Script Backup ──────────────────────────────
 
 async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; error?: string }> {
-  if (!BACKUP_URL) return { ok: false, error: "No Google backup URL configured" };
-
   const errors: string[] = [];
   const imageErrors: string[] = [];
 
@@ -232,37 +165,41 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
       const rows = await Promise.all(
         standingFields.map(async (f) => {
           const id = fid(f.fieldCode);
-          
-          // Ensure zone data exists with fallbacks
-          const zoneA = f.zoneA || { plantPhoto: null, leafPhoto: null, cobPhoto: null, height: null, color: null, density: null };
-          const zoneB = f.zoneB || { plantPhoto: null, leafPhoto: null, cobPhoto: null, height: null, color: null, density: null };
-          const zoneC = f.zoneC || { plantPhoto: null, leafPhoto: null, cobPhoto: null, height: null, color: null, density: null };
-          
-          const [zaPlant, zaLeaf, zaCob, zbPlant, zbLeaf, zbCob, zcPlant, zcLeaf, zcCob] = await Promise.all([
-            u(zoneA.plantPhoto, `${id}_zoneA-plant.jpg`),
-            u(zoneA.leafPhoto, `${id}_zoneA-leaf.jpg`),
-            u(zoneA.cobPhoto, `${id}_zoneA-cob.jpg`),
-            u(zoneB.plantPhoto, `${id}_zoneB-plant.jpg`),
-            u(zoneB.leafPhoto, `${id}_zoneB-leaf.jpg`),
-            u(zoneB.cobPhoto, `${id}_zoneB-cob.jpg`),
-            u(zoneC.plantPhoto, `${id}_zoneC-plant.jpg`),
-            u(zoneC.leafPhoto, `${id}_zoneC-leaf.jpg`),
-            u(zoneC.cobPhoto, `${id}_zoneC-cob.jpg`),
-          ]);
-          
+          const zA = f.zoneA ?? {};
+          const zB = f.zoneB ?? {};
+          const zC = f.zoneC ?? {};
+          const smeta = { stage: "standing", fieldId: id };
+          const [zaPlant, zaLeaf, zaCob, zbPlant, zbLeaf, zbCob, zcPlant, zcLeaf, zcCob] =
+            await Promise.all([
+              u(zA.plantPhoto ?? null, `${id}_zoneA-plant.jpg`, smeta),
+              u(zA.leafPhoto ?? null,  `${id}_zoneA-leaf.jpg`,  smeta),
+              u(zA.cobPhoto ?? null,   `${id}_zoneA-cob.jpg`,   smeta),
+              u(zB.plantPhoto ?? null, `${id}_zoneB-plant.jpg`, smeta),
+              u(zB.leafPhoto ?? null,  `${id}_zoneB-leaf.jpg`,  smeta),
+              u(zB.cobPhoto ?? null,   `${id}_zoneB-cob.jpg`,   smeta),
+              u(zC.plantPhoto ?? null, `${id}_zoneC-plant.jpg`, smeta),
+              u(zC.leafPhoto ?? null,  `${id}_zoneC-leaf.jpg`,  smeta),
+              u(zC.cobPhoto ?? null,   `${id}_zoneC-cob.jpg`,   smeta),
+            ]);
           return [
             f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
             zaPlant, zaLeaf, zaCob,
             zbPlant, zbLeaf, zbCob,
             zcPlant, zcLeaf, zcCob,
+            zA.height ?? "", zA.color ?? "", zA.density ?? "",
+            zB.height ?? "", zB.color ?? "", zB.density ?? "",
+            zC.height ?? "", zC.color ?? "", zC.density ?? "",
           ];
         })
       );
       await safeWrite("Field – Standing", [
         "Field Code", "Label", "Captured At",
         "Zone A – Plant", "Zone A – Leaf", "Zone A – Cob",
-        "Zone B – Plant", "Zone B – Leaf", "Zone B – Cob", 
+        "Zone B – Plant", "Zone B – Leaf", "Zone B – Cob",
         "Zone C – Plant", "Zone C – Leaf", "Zone C – Cob",
+        "Zone A – Height", "Zone A – Color", "Zone A – Density",
+        "Zone B – Height", "Zone B – Color", "Zone B – Density",
+        "Zone C – Height", "Zone C – Color", "Zone C – Density",
       ], rows);
     }
 
@@ -278,27 +215,24 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
       const rows = await Promise.all(
         cuttingFields.map(async (f) => {
           const id = fid(f.fieldCode);
-          
-          // Ensure zone data exists with fallbacks
-          const zoneA = f.zoneA || { plantPhoto: null, cobPhoto: null, height: null, color: null, density: null };
-          const zoneB = f.zoneB || { plantPhoto: null, cobPhoto: null, height: null, color: null, density: null };
-          const zoneC = f.zoneC || { plantPhoto: null, cobPhoto: null, height: null, color: null, density: null };
-          
+          const zA = f.zoneA ?? {};
+          const zB = f.zoneB ?? {};
+          const zC = f.zoneC ?? {};
+          const cmeta = { stage: "cutting", fieldId: id };
           const [zaPlant, zaCob, zbPlant, zbCob, zcPlant, zcCob] = await Promise.all([
-            u(zoneA.plantPhoto, `${id}_zoneA-plant.jpg`),
-            u(zoneA.cobPhoto, `${id}_zoneA-cob.jpg`),
-            u(zoneB.plantPhoto, `${id}_zoneB-plant.jpg`),
-            u(zoneB.cobPhoto, `${id}_zoneB-cob.jpg`),
-            u(zoneC.plantPhoto, `${id}_zoneC-plant.jpg`),
-            u(zoneC.cobPhoto, `${id}_zoneC-cob.jpg`),
+            u(zA.plantPhoto ?? null, `${id}_zoneA-plant.jpg`, cmeta),
+            u(zA.cobPhoto ?? null,   `${id}_zoneA-cob.jpg`,   cmeta),
+            u(zB.plantPhoto ?? null, `${id}_zoneB-plant.jpg`, cmeta),
+            u(zB.cobPhoto ?? null,   `${id}_zoneB-cob.jpg`,   cmeta),
+            u(zC.plantPhoto ?? null, `${id}_zoneC-plant.jpg`, cmeta),
+            u(zC.cobPhoto ?? null,   `${id}_zoneC-cob.jpg`,   cmeta),
           ]);
-          
           return [
             f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
-            zaPlant, zaCob, zoneA.height || "", zoneA.color || "", zoneA.density || "",
-            zbPlant, zbCob, zoneB.height || "", zoneB.color || "", zoneB.density || "",
-            zcPlant, zcCob, zoneC.height || "", zoneC.color || "", zoneC.density || "",
-            f.harvestMethod || "", f.cropCondition || "", f.cuttingHeight || "", f.lodging || "",
+            zaPlant, zaCob, zA.height ?? "", zA.color ?? "", zA.density ?? "",
+            zbPlant, zbCob, zB.height ?? "", zB.color ?? "", zB.density ?? "",
+            zcPlant, zcCob, zC.height ?? "", zC.color ?? "", zC.density ?? "",
+            f.harvestMethod ?? "", f.cropCondition ?? "", f.cuttingHeight ?? "", f.lodging ?? "",
           ];
         })
       );
@@ -323,7 +257,7 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
       const rows = await Promise.all(
         choppedFields.map(async (f) => {
           const id = fid(f.fieldCode);
-          const photo = await u(f.photo, `${id}_chopped_photo.jpg`);
+          const photo = await u(f.photo ?? null, `${id}_chopped-photo.jpg`, { stage: "chopped", fieldId: id });
           return [
             f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
             photo, f.chopLength ?? "", f.uniformity ?? "", f.materialQuality ?? "", f.moisture ?? "",
@@ -345,19 +279,17 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
       const rows = await Promise.all(
         harvestFields.map(async (hf) => {
           const shortId = hf.id.substring(0, 8);
-          const photos = hf.photos || { overview: null, leaf: null, cob: null };
-          const health = hf.health || { plantStand: null, pest: null, disease: null, rainfall: null };
-          
+          const photos = hf.photos ?? {};
+          const health = hf.health ?? {};
           const [overview, leaf, cob] = await Promise.all([
-            u(photos.overview, `HVT-${shortId}_harvest-overview.jpg`),
-            u(photos.leaf, `HVT-${shortId}_harvest-leaf.jpg`),
-            u(photos.cob, `HVT-${shortId}_harvest-cob.jpg`),
+            u(photos.overview ?? null, `HVT-${shortId}_harvest-overview.jpg`),
+            u(photos.leaf ?? null,     `HVT-${shortId}_harvest-leaf.jpg`),
+            u(photos.cob ?? null,      `HVT-${shortId}_harvest-cob.jpg`),
           ]);
-          
           return [
-            hf.id, fmt(hf.createdAt), hf.fieldArea || "", hf.cropType || "",
-            health.plantStand || "", health.pest || "",
-            health.disease || "", health.rainfall || "",
+            hf.id, fmt(hf.createdAt), hf.fieldArea ?? "", hf.cropType ?? "",
+            health.plantStand ?? "", health.pest ?? "",
+            health.disease ?? "", health.rainfall ?? "",
             farmerUrl, overview, leaf, cob,
           ];
         })
@@ -373,7 +305,7 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
     if (want("harvestRecord")) {
       const harvestRecords = await getHarvestRecords();
       const rows = harvestRecords.map((r) => [
-        r.id, fmt(r.createdAt), r.harvestFieldId, r.weightKg, r.output,
+        r.id, fmt(r.createdAt), r.harvestFieldId, r.weightKg, r.output ?? "",
       ]);
       await safeWrite("Harvest – Records",
         ["Record ID", "Date", "Visit ID", "Weight (kg)", "Output Type"],
@@ -388,18 +320,16 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
         postHarvest.map(async (b) => {
           const smpId = `SMP-${b.id.substring(0, 8)}`;
           const meta = { fieldId: b.harvestFieldId.substring(0, 8) };
-          const photos = b.photos || { storage: null, crossSection: null, sample: null, texture: null };
-          
+          const photos = b.photos ?? {};
           const [storage, cross, sample, texture] = await Promise.all([
-            u(photos.storage, `${smpId}_silage-storage.jpg`, meta),
-            u(photos.crossSection, `${smpId}_silage-cross-section.jpg`, meta),
-            u(photos.sample, `${smpId}_silage-sample.jpg`, meta),
-            u(photos.texture, `${smpId}_silage-texture.jpg`, meta),
+            u(photos.storage ?? null,      `${smpId}_silage-storage.jpg`, meta),
+            u(photos.crossSection ?? null, `${smpId}_silage-cross-section.jpg`, meta),
+            u(photos.sample ?? null,       `${smpId}_silage-sample.jpg`, meta),
+            u(photos.texture ?? null,      `${smpId}_silage-texture.jpg`, meta),
           ]);
-          
           return [
-            b.id, b.batchName || "", fmt(b.createdAt), b.harvestFieldId || "",
-            b.ph || "", b.smell || "", b.mold || "",
+            b.id, b.batchName ?? "", fmt(b.createdAt), b.harvestFieldId,
+            b.ph ?? "", b.smell ?? "", b.mold ?? "",
             storage, cross, sample, texture,
           ];
         })
@@ -411,17 +341,13 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
       ], rows);
     }
 
-    // ── Fields registry (only on full sync) ──────────────────
+    // ── Fields registry (full sync only) ─────────────────────
     if (target === "full") {
       const [fieldList, allFields] = await Promise.all([getFieldList(), getFields()]);
       const fieldRows = fieldList.map((f) => [
-        f.code,
-        f.label ?? "",
-        f.locationCode ?? "",
-        f.state ?? "",
-        f.district ?? "",
-        f.gps?.latitude ?? "",
-        f.gps?.longitude ?? "",
+        f.code, f.label ?? "", f.locationCode ?? "",
+        f.state ?? "", f.district ?? "",
+        f.gps?.latitude ?? "", f.gps?.longitude ?? "",
         fmt(f.createdAt),
         allFields
           .filter((c) => c.fieldCode === f.code)
@@ -435,65 +361,25 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
     }
 
     const allErrors = [...errors, ...imageErrors];
-    if (allErrors.length > 0) {
-      return { ok: false, error: allErrors.join(" | ") };
-    }
-    return { ok: true };
+    return allErrors.length > 0
+      ? { ok: false, error: allErrors.join(" | ") }
+      : { ok: true };
 
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
   }
 }
 
-// ─── Targeted backup ─────────────────────────────────────────
-// Each save screen calls runBackup with its specific target so only
-// the relevant sheet is written.
+// ─── Public API ───────────────────────────────────────────────
 
 export async function runBackup(
   target: BackupTarget = "full"
 ): Promise<{ ok: boolean; error?: string }> {
-  console.log("🎯 runBackup called with target:", target);
-  
-  // Use separated services if configured
-  if (USE_SEPARATED_SERVICES) {
-    console.log("🔧 Using separated services");
-    const { runSeparatedBackup } = await import("./backup-separated");
-    return runSeparatedBackup(target);
-  }
-  
-  // Try Google Apps Script first if configured
-  if (BACKUP_URL) {
-    console.log("📊 Trying Google Apps Script first...");
-    const googleResult = await runGoogleBackup(target);
-    if (googleResult.ok) {
-      console.log("✅ Google backup successful");
-      return googleResult;
-    }
-    
-    // If Google fails, try Supabase fallback
-    console.log("❌ Google Apps Script backup failed, trying Supabase fallback...");
-    const supabaseResult = await runSupabaseFallback();
-    if (supabaseResult.ok) {
-      console.log("✅ Supabase fallback successful");
-      return supabaseResult;
-    }
-    
-    // Both failed
-    console.log("❌ Both Google and Supabase failed");
-    return { 
-      ok: false, 
-      error: `Google: ${googleResult.error} | Supabase: ${supabaseResult.error}` 
+  if (!DRIVE_URL || !SHEETS_URL) {
+    return {
+      ok: false,
+      error: "Backup not configured. Add EXPO_PUBLIC_DRIVE_URL and EXPO_PUBLIC_SHEETS_URL to .env and restart Expo.",
     };
   }
-  
-  // No Google URL configured, try Supabase directly
-  console.log("🗄️ No Google URL configured, using Supabase directly...");
-  const supabaseResult = await runSupabaseFallback();
-  if (supabaseResult.ok) {
-    console.log("✅ Supabase backup successful");
-    return supabaseResult;
-  }
-  
-  console.log("❌ Supabase backup failed");
-  return { ok: false, error: `No backup configured. Supabase: ${supabaseResult.error}` };
+  return runGoogleBackup(target);
 }

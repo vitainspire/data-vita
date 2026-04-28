@@ -38,6 +38,10 @@ export async function triggerSync(target: BackupTarget = "full"): Promise<void> 
   
   if (!isBackupConfigured()) {
     console.log("❌ Backup not configured, exiting triggerSync");
+    set({
+      syncing: false,
+      lastError: "Backup not configured. Add EXPO_PUBLIC_DRIVE_URL and EXPO_PUBLIC_SHEETS_URL to .env and restart Expo.",
+    });
     return;
   }
   
