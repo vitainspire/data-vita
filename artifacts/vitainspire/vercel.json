@@ -1,5 +1,5 @@
 {
-  "buildCommand": "expo export --platform web",
+  "buildCommand": "../../node_modules/.bin/expo export --platform web",
   "outputDirectory": "dist",
   "installCommand": "cd ../.. && pnpm install",
   "framework": null
