@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { isBackupConfigured, runBackup } from "./backup";
+import { BackupTarget, isBackupConfigured, runBackup } from "./backup";
 
 type SyncState = {
   syncing: boolean;
@@ -32,16 +32,16 @@ export function useSyncState(): SyncState {
   return s;
 }
 
-export async function triggerSync(): Promise<void> {
+export async function triggerSync(target: BackupTarget = "full"): Promise<void> {
   if (!isBackupConfigured()) return;
   if (_state.syncing) {
-    scheduleSync(3000); // current sync still running — retry after it finishes
+    scheduleSync("full", 3000);
     return;
   }
 
   set({ syncing: true, lastError: null });
 
-  const result = await runBackup();
+  const result = await runBackup(target);
 
   if (result.ok) {
     set({ syncing: false, lastSyncAt: Date.now(), lastError: null });
@@ -50,7 +50,7 @@ export async function triggerSync(): Promise<void> {
   }
 }
 
-export function scheduleSync(delayMs = 0): void {
+export function scheduleSync(target: BackupTarget = "full", delayMs = 0): void {
   if (_pending) clearTimeout(_pending);
-  _pending = setTimeout(triggerSync, delayMs);
+  _pending = setTimeout(() => triggerSync(target), delayMs);
 }

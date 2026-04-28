@@ -43,7 +43,7 @@ export default function ChoppedScreen() {
         moisture,
       };
       await saveField(record);
-      scheduleSync();
+      scheduleSync("chopped");
       toast.show("Chopped capture saved");
       router.back();
     } catch (e) {

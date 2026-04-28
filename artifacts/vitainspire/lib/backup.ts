@@ -15,6 +15,15 @@ import {
 
 const BACKUP_URL = process.env.EXPO_PUBLIC_BACKUP_URL ?? "";
 
+export type BackupTarget =
+  | "standing"
+  | "cutting"
+  | "chopped"
+  | "harvestField"
+  | "harvestRecord"
+  | "postHarvest"
+  | "full";
+
 export function isBackupConfigured(): boolean {
   return BACKUP_URL.length > 0;
 }
@@ -49,7 +58,7 @@ function fmt(ts: number | undefined): string {
   return new Date(ts).toLocaleString();
 }
 
-// Throws on failure so errors are visible in the sync state.
+// Throws on failure so callers can collect the error.
 async function uploadImage(
   uri: string | null,
   fileName: string,
@@ -73,7 +82,7 @@ async function uploadImage(
   return json.url ?? "";
 }
 
-// Safe wrapper — returns "" and collects the error instead of throwing.
+// Safe wrapper — returns "" and appends the error instead of throwing.
 function img(
   errors: string[],
   uri: string | null,
@@ -102,202 +111,219 @@ async function writeSheet(
   let parsed: { status?: string };
   try { parsed = JSON.parse(text); } catch { parsed = {}; }
   if (parsed.status !== "success") {
-    throw new Error(`Sheet "${sheetName}" write failed: ${text.slice(0, 120)}`);
+    throw new Error(`Sheet "${sheetName}" write failed: ${text.slice(0, 200)}`);
   }
 }
 
-// ─── Main backup ─────────────────────────────────────────────
+// ─── Targeted backup ─────────────────────────────────────────
+// Each save screen calls runBackup with its specific target so only
+// the relevant sheet is written.
 
-export async function runBackup(): Promise<{ ok: boolean; error?: string }> {
+export async function runBackup(
+  target: BackupTarget = "full"
+): Promise<{ ok: boolean; error?: string }> {
   if (!BACKUP_URL) return { ok: false, error: "No backup URL configured" };
 
-  const sheetErrors: string[] = [];
+  const errors: string[] = [];
+  const imageErrors: string[] = [];
 
-  async function safeWriteSheet(
-    sheetName: string,
-    headers: string[],
-    rows: unknown[][]
-  ): Promise<void> {
-    try {
-      await writeSheet(sheetName, headers, rows);
-    } catch (err) {
-      sheetErrors.push(err instanceof Error ? err.message : `${sheetName} failed`);
-    }
+  async function safeWrite(name: string, headers: string[], rows: unknown[][]): Promise<void> {
+    try { await writeSheet(name, headers, rows); }
+    catch (e) { errors.push(e instanceof Error ? e.message : String(e)); }
   }
 
+  const u = (uri: string | null, name: string, meta?: Record<string, string>) =>
+    img(imageErrors, uri, name, meta);
+
   try {
-    const [fieldList, fields, harvestFields, harvestRecords, postHarvest, farmerPhotoUri] =
-      await Promise.all([
-        getFieldList(),
-        getFields(),
-        getHarvestFields(),
-        getHarvestRecords(),
-        getPostHarvestBatches(),
-        getFarmerPhoto(),
+    const want = (t: BackupTarget) => target === "full" || target === t;
+
+    // ── Standing ──────────────────────────────────────────────
+    if (want("standing")) {
+      const standingFields = (await getFields()).filter(
+        (f): f is StandingField => f.stage === "standing"
+      );
+      const fieldList = await getFieldList();
+      const labelOf = (code: string) => fieldList.find((f) => f.code === code)?.label ?? "";
+      const fid = (code: string) => labelOf(code) || `Field-${code}`;
+
+      const rows = await Promise.all(
+        standingFields.map(async (f) => {
+          const id = fid(f.fieldCode);
+          const [plant, leaf, cob] = await Promise.all([
+            u(f.plantPhoto, `${id}_standing-plant.jpg`),
+            u(f.leafPhoto,  `${id}_standing-leafcob.jpg`),
+            u(f.cobPhoto,   `${id}_standing-cob.jpg`),
+          ]);
+          return [f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt), plant, leaf, cob];
+        })
+      );
+      await safeWrite("Field – Standing",
+        ["Field Code", "Label", "Captured At", "Plant Photo", "Leaf Photo", "Cob Photo"],
+        rows
+      );
+    }
+
+    // ── Cutting ───────────────────────────────────────────────
+    if (want("cutting")) {
+      const cuttingFields = (await getFields()).filter(
+        (f): f is CuttingField => f.stage === "cutting"
+      );
+      const fieldList = await getFieldList();
+      const labelOf = (code: string) => fieldList.find((f) => f.code === code)?.label ?? "";
+      const fid = (code: string) => labelOf(code) || `Field-${code}`;
+
+      const rows = await Promise.all(
+        cuttingFields.map(async (f) => {
+          const id = fid(f.fieldCode);
+          const [zaPlant, zaCob, zbPlant, zbCob, zcPlant, zcCob] = await Promise.all([
+            u(f.zoneA?.plantPhoto ?? null, `${id}_zoneA-plant.jpg`),
+            u(f.zoneA?.cobPhoto   ?? null, `${id}_zoneA-cob.jpg`),
+            u(f.zoneB?.plantPhoto ?? null, `${id}_zoneB-plant.jpg`),
+            u(f.zoneB?.cobPhoto   ?? null, `${id}_zoneB-cob.jpg`),
+            u(f.zoneC?.plantPhoto ?? null, `${id}_zoneC-plant.jpg`),
+            u(f.zoneC?.cobPhoto   ?? null, `${id}_zoneC-cob.jpg`),
+          ]);
+          return [
+            f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
+            zaPlant, zaCob, f.zoneA?.height ?? "", f.zoneA?.color ?? "", f.zoneA?.density ?? "",
+            zbPlant, zbCob, f.zoneB?.height ?? "", f.zoneB?.color ?? "", f.zoneB?.density ?? "",
+            zcPlant, zcCob, f.zoneC?.height ?? "", f.zoneC?.color ?? "", f.zoneC?.density ?? "",
+            f.harvestMethod ?? "", f.cropCondition ?? "", f.cuttingHeight ?? "", f.lodging ?? "",
+          ];
+        })
+      );
+      await safeWrite("Field – Cutting", [
+        "Field Code", "Label", "Captured At",
+        "Zone A – Plant", "Zone A – Cob", "Zone A – Height", "Zone A – Color", "Zone A – Density",
+        "Zone B – Plant", "Zone B – Cob", "Zone B – Height", "Zone B – Color", "Zone B – Density",
+        "Zone C – Plant", "Zone C – Cob", "Zone C – Height", "Zone C – Color", "Zone C – Density",
+        "Harvest Method", "Crop Condition", "Cutting Height", "Lodging",
+      ], rows);
+    }
+
+    // ── Chopped ───────────────────────────────────────────────
+    if (want("chopped")) {
+      const choppedFields = (await getFields()).filter(
+        (f): f is ChoppedField => f.stage === "chopped"
+      );
+      const fieldList = await getFieldList();
+      const labelOf = (code: string) => fieldList.find((f) => f.code === code)?.label ?? "";
+      const fid = (code: string) => labelOf(code) || `Field-${code}`;
+
+      const rows = await Promise.all(
+        choppedFields.map(async (f) => {
+          const id = fid(f.fieldCode);
+          const photo = await u(f.photo, `${id}_chopped_photo.jpg`);
+          return [
+            f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
+            photo, f.chopLength ?? "", f.uniformity ?? "", f.materialQuality ?? "", f.moisture ?? "",
+          ];
+        })
+      );
+      await safeWrite("Field – Chopped",
+        ["Field Code", "Label", "Captured At", "Photo", "Chop Length", "Uniformity", "Material Quality", "Moisture"],
+        rows
+      );
+    }
+
+    // ── Harvest field visits ──────────────────────────────────
+    if (want("harvestField")) {
+      const harvestFields = await getHarvestFields();
+      const farmerPhotoUri = await getFarmerPhoto();
+      const farmerUrl = await u(farmerPhotoUri, "farmer-profile_farmer.jpg");
+
+      const rows = await Promise.all(
+        harvestFields.map(async (hf) => {
+          const shortId = hf.id.substring(0, 8);
+          const [overview, leaf, cob] = await Promise.all([
+            u(hf.photos?.overview ?? null, `HVT-${shortId}_harvest-overview.jpg`),
+            u(hf.photos?.leaf     ?? null, `HVT-${shortId}_harvest-leaf.jpg`),
+            u(hf.photos?.cob      ?? null, `HVT-${shortId}_harvest-cob.jpg`),
+          ]);
+          return [
+            hf.id, fmt(hf.createdAt), hf.fieldArea, hf.cropType,
+            hf.health?.plantStand ?? "", hf.health?.pest ?? "",
+            hf.health?.disease ?? "", hf.health?.rainfall ?? "",
+            farmerUrl, overview, leaf, cob,
+          ];
+        })
+      );
+      await safeWrite("Harvest – Field Visits", [
+        "Visit ID", "Date", "Area (acres)", "Crop Type",
+        "Plant Stand", "Pest Pressure", "Disease", "Rainfall",
+        "Farmer Photo", "Field Overview", "Leaf Photo", "Cob Photo",
+      ], rows);
+    }
+
+    // ── Harvest weight records ────────────────────────────────
+    if (want("harvestRecord")) {
+      const harvestRecords = await getHarvestRecords();
+      const rows = harvestRecords.map((r) => [
+        r.id, fmt(r.createdAt), r.harvestFieldId, r.weightKg, r.output,
       ]);
+      await safeWrite("Harvest – Records",
+        ["Record ID", "Date", "Visit ID", "Weight (kg)", "Output Type"],
+        rows
+      );
+    }
 
-    const labelOf = (code: string) =>
-      fieldList.find((f) => f.code === code)?.label ?? "";
+    // ── Post-harvest batches ──────────────────────────────────
+    if (want("postHarvest")) {
+      const postHarvest = await getPostHarvestBatches();
+      const rows = await Promise.all(
+        postHarvest.map(async (b) => {
+          const smpId = `SMP-${b.id.substring(0, 8)}`;
+          const meta = { fieldId: b.harvestFieldId.substring(0, 8) };
+          const [storage, cross, sample, texture] = await Promise.all([
+            u(b.photos?.storage      ?? null, `${smpId}_silage-storage.jpg`,       meta),
+            u(b.photos?.crossSection ?? null, `${smpId}_silage-cross-section.jpg`, meta),
+            u(b.photos?.sample       ?? null, `${smpId}_silage-sample.jpg`,        meta),
+            u(b.photos?.texture      ?? null, `${smpId}_silage-texture.jpg`,       meta),
+          ]);
+          return [
+            b.id, b.batchName, fmt(b.createdAt), b.harvestFieldId,
+            b.ph, b.smell ?? "", b.mold ?? "",
+            storage, cross, sample, texture,
+          ];
+        })
+      );
+      await safeWrite("Post Harvest – Batches", [
+        "Batch ID", "Batch Name", "Date", "Visit ID",
+        "pH", "Smell", "Mold",
+        "Storage Photo", "Cross Section", "Sample Bag", "Texture",
+      ], rows);
+    }
 
-    const fid = (code: string) => {
-      const lbl = labelOf(code);
-      return lbl || `Field-${code}`;
-    };
+    // ── Fields registry (only on full sync) ──────────────────
+    if (target === "full") {
+      const [fieldList, allFields] = await Promise.all([getFieldList(), getFields()]);
+      const fieldRows = fieldList.map((f) => [
+        f.code,
+        f.label ?? "",
+        f.locationCode ?? "",
+        f.state ?? "",
+        f.district ?? "",
+        f.gps?.latitude ?? "",
+        f.gps?.longitude ?? "",
+        fmt(f.createdAt),
+        allFields
+          .filter((c) => c.fieldCode === f.code)
+          .map((c) => c.stage.charAt(0).toUpperCase() + c.stage.slice(1))
+          .join(", ") || "—",
+      ]);
+      await safeWrite("Fields",
+        ["Code", "Label", "Location Code", "State", "District", "Latitude", "Longitude", "Created At", "Stages Completed"],
+        fieldRows
+      );
+    }
 
-    // ── Fields registry sheet ──
-    const fieldRows = fieldList.map((f) => [
-      f.code,
-      f.label ?? "",
-      f.locationCode ?? "",
-      f.state ?? "",
-      f.district ?? "",
-      f.gps?.latitude ?? "",
-      f.gps?.longitude ?? "",
-      fmt(f.createdAt),
-      fields
-        .filter((c) => c.fieldCode === f.code)
-        .map((c) => c.stage.charAt(0).toUpperCase() + c.stage.slice(1))
-        .join(", ") || "—",
-    ]);
-
-    const imageErrors: string[] = [];
-    const u = (uri: string | null, name: string, meta?: Record<string, string>) =>
-      img(imageErrors, uri, name, meta);
-
-    // ── Standing captures ──
-    const standingFields = fields.filter((f): f is StandingField => f.stage === "standing");
-    const standingRows = await Promise.all(
-      standingFields.map(async (f) => {
-        const id = fid(f.fieldCode);
-        const [plant, leaf, cob] = await Promise.all([
-          u(f.plantPhoto, `${id}_standing-plant.jpg`),
-          u(f.leafPhoto,  `${id}_standing-leafcob.jpg`),
-          u(f.cobPhoto,   `${id}_standing-cob.jpg`),
-        ]);
-        return [f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt), plant, leaf, cob];
-      })
-    );
-
-    // ── Cutting captures ──
-    const cuttingFields = fields.filter((f): f is CuttingField => f.stage === "cutting");
-    const cuttingRows = await Promise.all(
-      cuttingFields.map(async (f) => {
-        const id = fid(f.fieldCode);
-        const [zaPlant, zaCob, zbPlant, zbCob, zcPlant, zcCob] = await Promise.all([
-          u(f.zoneA?.plantPhoto ?? null, `${id}_zoneA-plant.jpg`),
-          u(f.zoneA?.cobPhoto   ?? null, `${id}_zoneA-cob.jpg`),
-          u(f.zoneB?.plantPhoto ?? null, `${id}_zoneB-plant.jpg`),
-          u(f.zoneB?.cobPhoto   ?? null, `${id}_zoneB-cob.jpg`),
-          u(f.zoneC?.plantPhoto ?? null, `${id}_zoneC-plant.jpg`),
-          u(f.zoneC?.cobPhoto   ?? null, `${id}_zoneC-cob.jpg`),
-        ]);
-        return [
-          f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
-          zaPlant, zaCob, f.zoneA?.height ?? "", f.zoneA?.color ?? "", f.zoneA?.density ?? "",
-          zbPlant, zbCob, f.zoneB?.height ?? "", f.zoneB?.color ?? "", f.zoneB?.density ?? "",
-          zcPlant, zcCob, f.zoneC?.height ?? "", f.zoneC?.color ?? "", f.zoneC?.density ?? "",
-          f.harvestMethod ?? "", f.cropCondition ?? "", f.cuttingHeight ?? "", f.lodging ?? "",
-        ];
-      })
-    );
-
-    // ── Chopped captures ──
-    const choppedFields = fields.filter((f): f is ChoppedField => f.stage === "chopped");
-    const choppedRows = await Promise.all(
-      choppedFields.map(async (f) => {
-        const id = fid(f.fieldCode);
-        const photo = await u(f.photo, `${id}_chopped_photo.jpg`);
-        return [
-          f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
-          photo, f.chopLength ?? "", f.uniformity ?? "", f.materialQuality ?? "", f.moisture ?? "",
-        ];
-      })
-    );
-
-    // ── Harvest field visits ──
-    const farmerUrl = await u(farmerPhotoUri, "farmer-profile_farmer.jpg");
-    const harvestFieldRows = await Promise.all(
-      harvestFields.map(async (hf) => {
-        const shortId = hf.id.substring(0, 8);
-        const [overview, leaf, cob] = await Promise.all([
-          u(hf.photos?.overview ?? null, `HVT-${shortId}_harvest-overview.jpg`),
-          u(hf.photos?.leaf     ?? null, `HVT-${shortId}_harvest-leaf.jpg`),
-          u(hf.photos?.cob      ?? null, `HVT-${shortId}_harvest-cob.jpg`),
-        ]);
-        return [
-          hf.id, fmt(hf.createdAt), hf.fieldArea, hf.cropType,
-          hf.health?.plantStand ?? "", hf.health?.pest ?? "",
-          hf.health?.disease ?? "", hf.health?.rainfall ?? "",
-          farmerUrl, overview, leaf, cob,
-        ];
-      })
-    );
-
-    // ── Harvest weight records ──
-    const harvestRecordRows = harvestRecords.map((r) => [
-      r.id, fmt(r.createdAt), r.harvestFieldId, r.weightKg, r.output,
-    ]);
-
-    // ── Post-harvest batches ──
-    const postHarvestRows = await Promise.all(
-      postHarvest.map(async (b) => {
-        const smpId = `SMP-${b.id.substring(0, 8)}`;
-        const meta = { fieldId: b.harvestFieldId.substring(0, 8) };
-        const [storage, cross, sample, texture] = await Promise.all([
-          u(b.photos?.storage      ?? null, `${smpId}_silage-storage.jpg`,       meta),
-          u(b.photos?.crossSection ?? null, `${smpId}_silage-cross-section.jpg`, meta),
-          u(b.photos?.sample       ?? null, `${smpId}_silage-sample.jpg`,        meta),
-          u(b.photos?.texture      ?? null, `${smpId}_silage-texture.jpg`,       meta),
-        ]);
-        return [
-          b.id, b.batchName, fmt(b.createdAt), b.harvestFieldId,
-          b.ph, b.smell ?? "", b.mold ?? "",
-          storage, cross, sample, texture,
-        ];
-      })
-    );
-
-    // ── Write all sheets independently so one failure doesn't block others ──
-    await safeWriteSheet("Fields",
-      ["Code", "Label", "Location Code", "State", "District", "Latitude", "Longitude", "Created At", "Stages Completed"],
-      fieldRows
-    );
-    await safeWriteSheet("Field – Standing",
-      ["Field Code", "Label", "Captured At", "Plant Photo", "Leaf Photo", "Cob Photo"],
-      standingRows
-    );
-    await safeWriteSheet("Field – Cutting", [
-      "Field Code", "Label", "Captured At",
-      "Zone A – Plant", "Zone A – Cob", "Zone A – Height", "Zone A – Color", "Zone A – Density",
-      "Zone B – Plant", "Zone B – Cob", "Zone B – Height", "Zone B – Color", "Zone B – Density",
-      "Zone C – Plant", "Zone C – Cob", "Zone C – Height", "Zone C – Color", "Zone C – Density",
-      "Harvest Method", "Crop Condition", "Cutting Height", "Lodging",
-    ], cuttingRows);
-    await safeWriteSheet("Field – Chopped",
-      ["Field Code", "Label", "Captured At", "Photo", "Chop Length", "Uniformity", "Material Quality", "Moisture"],
-      choppedRows
-    );
-    await safeWriteSheet("Harvest – Field Visits", [
-      "Visit ID", "Date", "Area (acres)", "Crop Type",
-      "Plant Stand", "Pest Pressure", "Disease", "Rainfall",
-      "Farmer Photo", "Field Overview", "Leaf Photo", "Cob Photo",
-    ], harvestFieldRows);
-    await safeWriteSheet("Harvest – Records",
-      ["Record ID", "Date", "Visit ID", "Weight (kg)", "Output Type"],
-      harvestRecordRows
-    );
-    await safeWriteSheet("Post Harvest – Batches", [
-      "Batch ID", "Batch Name", "Date", "Visit ID",
-      "pH", "Smell", "Mold",
-      "Storage Photo", "Cross Section", "Sample Bag", "Texture",
-    ], postHarvestRows);
-
-    const allErrors = [...sheetErrors, ...imageErrors];
+    const allErrors = [...errors, ...imageErrors];
     if (allErrors.length > 0) {
       return { ok: false, error: allErrors.join(" | ") };
     }
-
     return { ok: true };
+
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
   }

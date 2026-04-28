@@ -74,7 +74,7 @@ export default function CuttingScreen() {
         lodging,
       };
       await saveField(record);
-      scheduleSync();
+      scheduleSync("cutting");
       toast.show("Cutting capture saved");
       router.back();
     } catch (e) {

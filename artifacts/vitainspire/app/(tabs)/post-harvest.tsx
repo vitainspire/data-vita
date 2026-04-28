@@ -99,7 +99,7 @@ export default function PostHarvestTab() {
         mold,
       };
       await savePostHarvestBatch(batch);
-      scheduleSync();
+      scheduleSync("postHarvest");
       const updated = await getPostHarvestBatches();
       setBatches(updated);
       toast.show("Silage batch submitted");

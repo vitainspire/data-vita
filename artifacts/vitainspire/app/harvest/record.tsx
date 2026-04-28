@@ -63,7 +63,7 @@ export default function RecordHarvestScreen() {
         output,
       };
       await saveHarvestRecord(record);
-      scheduleSync();
+      scheduleSync("harvestRecord");
       toast.show("Harvest recorded");
       router.back();
     } catch (e) {

@@ -56,14 +56,23 @@ function doPost(e) {
   }
 }
 
-// Returns the spreadsheet without touching Drive when SPREADSHEET_ID is set.
-// Falls back to folder-based lookup only when no ID is configured.
+// Returns the spreadsheet for row writes — never touches Drive after first run.
+// Priority: CONFIG.SPREADSHEET_ID → cached PropertiesService ID → create new.
 function getSpreadsheetDirect_() {
   if (CONFIG.SPREADSHEET_ID) {
     return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   }
-  const folder = getOrCreateFolder();
-  return getOrCreateSpreadsheet(folder);
+
+  const props = PropertiesService.getScriptProperties();
+  const cachedId = props.getProperty('VITAINSPIRE_SS_ID');
+  if (cachedId) {
+    try { return SpreadsheetApp.openById(cachedId); } catch(e) { /* deleted — fall through */ }
+  }
+
+  // First-ever run: create a spreadsheet and cache its ID (no DriveApp needed)
+  const ss = SpreadsheetApp.create('VitaInspire – Field Data');
+  props.setProperty('VITAINSPIRE_SS_ID', ss.getId());
+  return ss;
 }
 
 // ============================================================

@@ -38,7 +38,7 @@ export default function StandingScreen() {
         cobPhoto: cob,
       };
       await saveField(record);
-      scheduleSync();
+      scheduleSync("standing");
       toast.show("Standing crop captured");
       router.back();
     } catch (e) {

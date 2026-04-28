@@ -78,7 +78,7 @@ export default function NewVisitScreen() {
         farmerPhoto,
       };
       await saveHarvestField(record);
-      scheduleSync();
+      scheduleSync("harvestField");
       toast.show("Field saved");
       router.back();
     } catch (e) {
