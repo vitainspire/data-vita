@@ -65,21 +65,43 @@ async function uploadImage(
   metadata?: Record<string, string>
 ): Promise<string> {
   if (!uri || !BACKUP_URL) return "";
-  const base64 = await uriToBase64(uri);
-  if (!base64) return "";
-  const res = await fetch(BACKUP_URL, {
-    method: "POST",
-    redirect: "follow",
-    headers: { "Content-Type": "text/plain" },
-    body: JSON.stringify({ base64, fileName, mimeType: "image/jpeg", metadata: metadata ?? {} }),
-  });
-  const text = await res.text();
-  let json: { status: string; url?: string; message?: string };
-  try { json = JSON.parse(text); } catch { throw new Error(`${fileName}: bad response`); }
-  if (json.status !== "success") {
-    throw new Error(`${fileName}: ${json.message ?? "upload failed"}`);
+  
+  try {
+    const base64 = await uriToBase64(uri);
+    if (!base64) return "";
+    
+    // Add timeout to prevent hanging uploads
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
+    try {
+      const res = await fetch(BACKUP_URL, {
+        method: "POST",
+        redirect: "follow",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ base64, fileName, mimeType: "image/jpeg", metadata: metadata ?? {} }),
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      const text = await res.text();
+      let json: { status: string; url?: string; message?: string };
+      try { json = JSON.parse(text); } catch { throw new Error(`${fileName}: bad response`); }
+      if (json.status !== "success") {
+        throw new Error(`${fileName}: ${json.message ?? "upload failed"}`);
+      }
+      return json.url ?? "";
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`${fileName}: upload timeout`);
+      }
+      throw error;
+    }
+  } catch (error) {
+    throw error;
   }
-  return json.url ?? "";
 }
 
 // Safe wrapper — returns "" and appends the error instead of throwing.
@@ -89,8 +111,21 @@ function img(
   fileName: string,
   metadata?: Record<string, string>
 ): Promise<string> {
+  // Skip image upload if URI is null/empty to avoid Drive errors
+  if (!uri || uri.trim() === "") {
+    return Promise.resolve("");
+  }
+  
+  // Emergency fallback: skip all image uploads if SKIP_IMAGE_UPLOADS is set
+  if (process.env.SKIP_IMAGE_UPLOADS === "true") {
+    console.warn(`Skipping image upload for ${fileName} (SKIP_IMAGE_UPLOADS=true)`);
+    return Promise.resolve("");
+  }
+  
   return uploadImage(uri, fileName, metadata).catch((e: unknown) => {
-    errors.push(e instanceof Error ? e.message : String(e));
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    console.warn(`Image upload failed for ${fileName}: ${errorMsg}`);
+    errors.push(`Image upload failed: ${fileName} - ${errorMsg}`);
     return "";
   });
 }
@@ -187,20 +222,27 @@ export async function runBackup(
       const rows = await Promise.all(
         cuttingFields.map(async (f) => {
           const id = fid(f.fieldCode);
+          
+          // Ensure zone data exists with fallbacks
+          const zoneA = f.zoneA || { plantPhoto: null, cobPhoto: null, height: null, color: null, density: null };
+          const zoneB = f.zoneB || { plantPhoto: null, cobPhoto: null, height: null, color: null, density: null };
+          const zoneC = f.zoneC || { plantPhoto: null, cobPhoto: null, height: null, color: null, density: null };
+          
           const [zaPlant, zaCob, zbPlant, zbCob, zcPlant, zcCob] = await Promise.all([
-            u(f.zoneA?.plantPhoto ?? null, `${id}_zoneA-plant.jpg`),
-            u(f.zoneA?.cobPhoto   ?? null, `${id}_zoneA-cob.jpg`),
-            u(f.zoneB?.plantPhoto ?? null, `${id}_zoneB-plant.jpg`),
-            u(f.zoneB?.cobPhoto   ?? null, `${id}_zoneB-cob.jpg`),
-            u(f.zoneC?.plantPhoto ?? null, `${id}_zoneC-plant.jpg`),
-            u(f.zoneC?.cobPhoto   ?? null, `${id}_zoneC-cob.jpg`),
+            u(zoneA.plantPhoto, `${id}_zoneA-plant.jpg`),
+            u(zoneA.cobPhoto, `${id}_zoneA-cob.jpg`),
+            u(zoneB.plantPhoto, `${id}_zoneB-plant.jpg`),
+            u(zoneB.cobPhoto, `${id}_zoneB-cob.jpg`),
+            u(zoneC.plantPhoto, `${id}_zoneC-plant.jpg`),
+            u(zoneC.cobPhoto, `${id}_zoneC-cob.jpg`),
           ]);
+          
           return [
             f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
-            zaPlant, zaCob, f.zoneA?.height ?? "", f.zoneA?.color ?? "", f.zoneA?.density ?? "",
-            zbPlant, zbCob, f.zoneB?.height ?? "", f.zoneB?.color ?? "", f.zoneB?.density ?? "",
-            zcPlant, zcCob, f.zoneC?.height ?? "", f.zoneC?.color ?? "", f.zoneC?.density ?? "",
-            f.harvestMethod ?? "", f.cropCondition ?? "", f.cuttingHeight ?? "", f.lodging ?? "",
+            zaPlant, zaCob, zoneA.height || "", zoneA.color || "", zoneA.density || "",
+            zbPlant, zbCob, zoneB.height || "", zoneB.color || "", zoneB.density || "",
+            zcPlant, zcCob, zoneC.height || "", zoneC.color || "", zoneC.density || "",
+            f.harvestMethod || "", f.cropCondition || "", f.cuttingHeight || "", f.lodging || "",
           ];
         })
       );
