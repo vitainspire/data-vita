@@ -1,6 +1,6 @@
 {
-  "buildCommand": "pnpm run build",
+  "buildCommand": "expo export --platform web",
   "outputDirectory": "dist",
-  "installCommand": "pnpm install",
+  "installCommand": "cd ../.. && pnpm install",
   "framework": null
 }
