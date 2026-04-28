@@ -1,6 +1,6 @@
 {
-  "buildCommand": "../../node_modules/.bin/expo export --platform web",
+  "buildCommand": "pnpm run build",
   "outputDirectory": "dist",
-  "installCommand": "cd ../.. && pnpm install",
+  "installCommand": "pnpm install --no-frozen-lockfile",
   "framework": null
 }
