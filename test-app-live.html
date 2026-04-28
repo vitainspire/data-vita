@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VitaInspire Backup Diagnostic</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .section {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .section h2 {
+            margin-top: 0;
+            color: #4ec9b0;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .success {
+            background: #1e3a1e;
+            border-left: 4px solid #4ec9b0;
+        }
+        .error {
+            background: #3a1e1e;
+            border-left: 4px solid #f48771;
+        }
+        .warning {
+            background: #3a3a1e;
+            border-left: 4px solid #dcdcaa;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        button:disabled {
+            background: #3e3e42;
+            cursor: not-allowed;
+        }
+        .code {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .instructions {
+            background: #264f78;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 VitaInspire Backup Diagnostic Tool</h1>
+    
+    <div class="instructions">
+        <h3>📋 Instructions:</h3>
+        <ol>
+            <li>Open your VitaInspire app in another browser tab</li>
+            <li>Open browser DevTools (F12) in the VitaInspire tab</li>
+            <li>Copy the script below and paste it into the Console</li>
+            <li>Come back here and click "Run All Tests"</li>
+        </ol>
+    </div>
+
+    <div class="section">
+        <h2>Step 1: Copy This Script to Your App Console</h2>
+        <div class="code">
+<pre>// VitaInspire Diagnostic Script
+window.vitaInspireDiag = {
+    env: {
+        supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
+        supabaseKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+        backupUrl: process.env.EXPO_PUBLIC_BACKUP_URL,
+    },
+    testConnection: async function() {
+        if (!this.env.supabaseUrl || !this.env.supabaseKey) {
+            return { ok: false, error: 'Environment variables not set' };
+        }
+        try {
+            const response = await fetch(`${this.env.supabaseUrl}/rest/v1/fields?select=count`, {
+                method: 'GET',
+                headers: {
+                    'apikey': this.env.supabaseKey,
+                    'Authorization': `Bearer ${this.env.supabaseKey}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            return { ok: response.ok, status: response.status };
+        } catch (error) {
+            return { ok: false, error: error.message };
+        }
+    },
+    testInsert: async function() {
+        if (!this.env.supabaseUrl || !this.env.supabaseKey) {
+            return { ok: false, error: 'Environment variables not set' };
+        }
+        try {
+            const testData = {
+                code: `DIAG-${Date.now()}`,
+                label: 'Diagnostic Test',
+                location_code: 'DIAG',
+                state: 'Test',
+                district: 'Test',
+                latitude: 12.9716,
+                longitude: 77.5946,
+                created_at: new Date().toISOString()
+            };
+            const response = await fetch(`${this.env.supabaseUrl}/rest/v1/fields`, {
+                method: 'POST',
+                headers: {
+                    'apikey': this.env.supabaseKey,
+                    'Authorization': `Bearer ${this.env.supabaseKey}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify(testData)
+            });
+            if (response.ok) {
+                return { ok: true, fieldCode: testData.code };
+            } else {
+                const errorText = await response.text();
+                return { ok: false, error: errorText, status: response.status };
+            }
+        } catch (error) {
+            return { ok: false, error: error.message };
+        }
+    }
+};
+console.log('✅ Diagnostic script loaded. Run window.vitaInspireDiag.testConnection() to test.');</pre>
+        </div>
+        <button onclick="copyScript()">📋 Copy Script</button>
+    </div>
+
+    <div class="section">
+        <h2>Step 2: Run Diagnostic Tests</h2>
+        <button onclick="runAllTests()">🚀 Run All Tests</button>
+        <button onclick="clearResults()">🗑️ Clear Results</button>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        function copyScript() {
+            const script = document.querySelector('.code pre').textContent;
+            navigator.clipboard.writeText(script).then(() => {
+                alert('✅ Script copied! Paste it in your VitaInspire app console.');
+            });
+        }
+
+        function addResult(title, message, type = 'success') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<strong>${title}</strong><br>${message}`;
+            results.appendChild(div);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        async function runAllTests() {
+            clearResults();
+            addResult('🔄 Starting Tests', 'Running diagnostic tests...', 'warning');
+
+            // Test 1: Check if script is loaded
+            addResult('Test 1: Script Check', 
+                'Please confirm you ran the script in your VitaInspire app console.<br>' +
+                'Then manually run: <code>window.vitaInspireDiag.testConnection()</code>', 
+                'warning');
+
+            // Test 2: Environment variables
+            addResult('Test 2: Environment Variables', 
+                'In your app console, check:<br>' +
+                '<code>console.log(window.vitaInspireDiag.env)</code><br>' +
+                'Expected: supabaseUrl and supabaseKey should be set', 
+                'warning');
+
+            // Test 3: Connection test
+            addResult('Test 3: Supabase Connection', 
+                'In your app console, run:<br>' +
+                '<code>await window.vitaInspireDiag.testConnection()</code><br>' +
+                'Expected: {ok: true, status: 200}', 
+                'warning');
+
+            // Test 4: Insert test
+            addResult('Test 4: Data Insertion', 
+                'In your app console, run:<br>' +
+                '<code>await window.vitaInspireDiag.testInsert()</code><br>' +
+                'Expected: {ok: true, fieldCode: "DIAG-..."}', 
+                'warning');
+
+            // Test 5: Backup flow
+            addResult('Test 5: Backup Flow', 
+                'In your app, use the BackupTestComponent:<br>' +
+                '1. Go to Field tab<br>' +
+                '2. Find "Backup Test Component"<br>' +
+                '3. Tap "Test Backup Flow"<br>' +
+                '4. Watch console for logs', 
+                'warning');
+
+            addResult('📊 Next Steps', 
+                'Run each test in your app console and report back:<br>' +
+                '- Which tests passed ✅<br>' +
+                '- Which tests failed ❌<br>' +
+                '- Any error messages', 
+                'warning');
+        }
+    </script>
+</body>
+</html>
