@@ -23,10 +23,6 @@ function NativeTabLayout() {
         <Icon sf={{ default: "archivebox", selected: "archivebox.fill" }} />
         <Label>Post Harvest</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="export">
-        <Icon sf={{ default: "icloud.and.arrow.up", selected: "icloud.and.arrow.up.fill" }} />
-        <Label>Export</Label>
-      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -97,15 +93,6 @@ function ClassicTabLayout() {
           title: "Post Harvest",
           tabBarIcon: ({ color }) => (
             <Feather name="archive" size={22} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="export"
-        options={{
-          title: "Export",
-          tabBarIcon: ({ color }) => (
-            <Feather name="upload-cloud" size={22} color={color} />
           ),
         }}
       />

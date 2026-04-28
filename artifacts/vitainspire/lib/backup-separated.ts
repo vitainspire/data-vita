@@ -2,39 +2,23 @@ import * as FileSystem from "expo-file-system";
 import { Platform } from "react-native";
 
 import {
-  ChoppedField,
-  CuttingField,
   getFarmerPhoto,
   getFieldList,
   getFields,
   getHarvestFields,
   getHarvestRecords,
   getPostHarvestBatches,
-  StandingField,
 } from "./storage";
 
-const BACKUP_URL = process.env.EXPO_PUBLIC_BACKUP_URL ?? "";
-const USE_SEPARATED_SERVICES = process.env.EXPO_PUBLIC_USE_SEPARATED_SERVICES === "true";
-
-export type BackupTarget =
-  | "standing"
-  | "cutting"
-  | "chopped"
-  | "harvestField"
-  | "harvestRecord"
-  | "postHarvest"
-  | "full";
+// Separate URLs for Drive and Sheets services
+const DRIVE_URL = process.env.EXPO_PUBLIC_DRIVE_URL ?? "";
+const SHEETS_URL = process.env.EXPO_PUBLIC_SHEETS_URL ?? "";
 
 export function isBackupConfigured(): boolean {
-  if (USE_SEPARATED_SERVICES) {
-    const driveUrl = process.env.EXPO_PUBLIC_DRIVE_URL ?? "";
-    const sheetsUrl = process.env.EXPO_PUBLIC_SHEETS_URL ?? "";
-    return driveUrl.length > 0 && sheetsUrl.length > 0;
-  }
-  return BACKUP_URL.length > 0;
+  return DRIVE_URL.length > 0 && SHEETS_URL.length > 0;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────
+// ─── Image Upload (Drive Service) ────────────────────────────
 
 async function uriToBase64(uri: string | null): Promise<string | null> {
   if (!uri) return null;
@@ -59,33 +43,31 @@ async function uriToBase64(uri: string | null): Promise<string | null> {
   }
 }
 
-function fmt(ts: number | undefined): string {
-  if (!ts) return "";
-  return new Date(ts).toLocaleString();
-}
-
-// Throws on failure so callers can collect the error.
-async function uploadImage(
+async function uploadImageToDrive(
   uri: string | null,
   fileName: string,
   metadata?: Record<string, string>
 ): Promise<string> {
-  if (!uri || !BACKUP_URL) return "";
+  if (!uri || !DRIVE_URL) return "";
   
   try {
     const base64 = await uriToBase64(uri);
     if (!base64) return "";
     
-    // Add timeout to prevent hanging uploads
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for images
     
     try {
-      const res = await fetch(BACKUP_URL, {
+      const res = await fetch(DRIVE_URL, {
         method: "POST",
         redirect: "follow",
         headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({ base64, fileName, mimeType: "image/jpeg", metadata: metadata ?? {} }),
+        body: JSON.stringify({ 
+          base64, 
+          fileName, 
+          mimeType: "image/jpeg", 
+          metadata: metadata ?? {} 
+        }),
         signal: controller.signal,
       });
       
@@ -93,42 +75,43 @@ async function uploadImage(
       
       const text = await res.text();
       let json: { status: string; url?: string; message?: string };
-      try { json = JSON.parse(text); } catch { throw new Error(`${fileName}: bad response`); }
-      if (json.status !== "success") {
-        throw new Error(`${fileName}: ${json.message ?? "upload failed"}`);
+      
+      try { 
+        json = JSON.parse(text); 
+      } catch { 
+        throw new Error(`${fileName}: Invalid response from Drive service`);
       }
+      
+      if (json.status !== "success") {
+        throw new Error(`${fileName}: ${json.message ?? "Drive upload failed"}`);
+      }
+      
       return json.url ?? "";
     } catch (error) {
       clearTimeout(timeoutId);
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`${fileName}: upload timeout`);
+        throw new Error(`${fileName}: Drive upload timeout`);
       }
       throw error;
     }
   } catch (error) {
-    throw error;
+    console.warn(`Drive upload failed for ${fileName}:`, error);
+    return "";
   }
 }
 
-// Safe wrapper — returns "" and appends the error instead of throwing.
-function img(
+// Safe image upload wrapper
+function safeImageUpload(
   errors: string[],
   uri: string | null,
   fileName: string,
   metadata?: Record<string, string>
 ): Promise<string> {
-  // Skip image upload if URI is null/empty to avoid Drive errors
   if (!uri || uri.trim() === "") {
     return Promise.resolve("");
   }
   
-  // Emergency fallback: skip all image uploads if SKIP_IMAGE_UPLOADS is set
-  if (process.env.SKIP_IMAGE_UPLOADS === "true") {
-    console.warn(`Skipping image upload for ${fileName} (SKIP_IMAGE_UPLOADS=true)`);
-    return Promise.resolve("");
-  }
-  
-  return uploadImage(uri, fileName, metadata).catch((e: unknown) => {
+  return uploadImageToDrive(uri, fileName, metadata).catch((e: unknown) => {
     const errorMsg = e instanceof Error ? e.message : String(e);
     console.warn(`Image upload failed for ${fileName}: ${errorMsg}`);
     errors.push(`Image upload failed: ${fileName} - ${errorMsg}`);
@@ -136,12 +119,14 @@ function img(
   });
 }
 
-async function writeSheet(
+// ─── Sheet Writing (Sheets Service) ──────────────────────────
+
+async function writeToSheet(
   sheetName: string,
   headers: string[],
   rows: unknown[][]
 ): Promise<void> {
-  if (!BACKUP_URL) return;
+  if (!SHEETS_URL) throw new Error("Sheets URL not configured");
   
   // Sanitize rows to prevent Google Apps Script errors
   const sanitizedRows = rows.map(row => 
@@ -149,57 +134,100 @@ async function writeSheet(
       if (cell === null || cell === undefined) return "";
       if (typeof cell === "string") return cell;
       if (typeof cell === "number") return cell;
+      if (typeof cell === "boolean") return cell;
       return String(cell);
     })
   );
   
-  const res = await fetch(BACKUP_URL, {
-    method: "POST",
-    redirect: "follow",
-    headers: { "Content-Type": "text/plain" },
-    body: JSON.stringify({ type: "rows", sheetName, headers, rows: sanitizedRows }),
-  });
-  const text = await res.text();
-  let parsed: { status?: string; message?: string };
-  try { parsed = JSON.parse(text); } catch { parsed = {}; }
-  if (parsed.status !== "success") {
-    throw new Error(`Sheet "${sheetName}" write failed: ${text.slice(0, 200)}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout for sheets
+  
+  try {
+    const res = await fetch(SHEETS_URL, {
+      method: "POST",
+      redirect: "follow",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ 
+        type: "rows", 
+        sheetName, 
+        headers, 
+        rows: sanitizedRows 
+      }),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    const text = await res.text();
+    let parsed: { status?: string; message?: string };
+    
+    try { 
+      parsed = JSON.parse(text); 
+    } catch { 
+      throw new Error(`Invalid response from Sheets service: ${text.slice(0, 100)}`);
+    }
+    
+    if (parsed.status !== "success") {
+      throw new Error(`Sheet "${sheetName}" write failed: ${parsed.message ?? text.slice(0, 200)}`);
+    }
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Sheet "${sheetName}" write timeout`);
+    }
+    throw error;
   }
 }
 
-// ─── Targeted backup ─────────────────────────────────────────
-// Each save screen calls runBackup with its specific target so only
-// the relevant sheet is written.
-
-export async function runBackup(
-  target: BackupTarget = "full"
-): Promise<{ ok: boolean; error?: string }> {
-  // Use separated services if configured
-  if (USE_SEPARATED_SERVICES) {
-    const { runSeparatedBackup } = await import("./backup-separated");
-    return runSeparatedBackup(target);
+// Safe sheet writing wrapper
+async function safeWriteSheet(
+  errors: string[],
+  sheetName: string,
+  headers: string[],
+  rows: unknown[][]
+): Promise<void> {
+  try {
+    await writeToSheet(sheetName, headers, rows);
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    console.error(`Sheet write failed for ${sheetName}:`, errorMsg);
+    errors.push(`Sheet write failed: ${sheetName} - ${errorMsg}`);
   }
-  
-  if (!BACKUP_URL) return { ok: false, error: "No backup URL configured" };
+}
+
+// ─── Utility Functions ───────────────────────────────────────
+
+function fmt(ts: number | undefined): string {
+  if (!ts) return "";
+  return new Date(ts).toLocaleString();
+}
+
+// ─── Main Backup Function ────────────────────────────────────
+
+export type BackupTarget = "full" | "standing" | "cutting" | "chopped" | "harvestField" | "harvestRecord" | "postHarvest";
+
+export async function runSeparatedBackup(target: BackupTarget = "full"): Promise<{ ok: boolean; error?: string }> {
+  if (!DRIVE_URL || !SHEETS_URL) {
+    return { ok: false, error: "Drive URL or Sheets URL not configured" };
+  }
 
   const errors: string[] = [];
   const imageErrors: string[] = [];
 
-  async function safeWrite(name: string, headers: string[], rows: unknown[][]): Promise<void> {
-    try { await writeSheet(name, headers, rows); }
-    catch (e) { errors.push(e instanceof Error ? e.message : String(e)); }
-  }
+  const safeImg = (uri: string | null, name: string, meta?: Record<string, string>) =>
+    safeImageUpload(imageErrors, uri, name, meta);
 
-  const u = (uri: string | null, name: string, meta?: Record<string, string>) =>
-    img(imageErrors, uri, name, meta);
+  const safeWrite = (name: string, headers: string[], rows: unknown[][]) =>
+    safeWriteSheet(errors, name, headers, rows);
 
   try {
     const want = (t: BackupTarget) => target === "full" || target === t;
 
     // ── Standing ──────────────────────────────────────────────
     if (want("standing")) {
+      console.log("Backing up standing fields...");
       const standingFields = (await getFields()).filter(
-        (f): f is StandingField => f.stage === "standing"
+        (f): f is any => f.stage === "standing"
       );
       const fieldList = await getFieldList();
       const labelOf = (code: string) => fieldList.find((f) => f.code === code)?.label ?? "";
@@ -209,23 +237,25 @@ export async function runBackup(
         standingFields.map(async (f) => {
           const id = fid(f.fieldCode);
           const [plant, leaf, cob] = await Promise.all([
-            u(f.plantPhoto, `${id}_standing-plant.jpg`),
-            u(f.leafPhoto,  `${id}_standing-leafcob.jpg`),
-            u(f.cobPhoto,   `${id}_standing-cob.jpg`),
+            safeImg(f.plantPhoto, `${id}_standing-plant.jpg`),
+            safeImg(f.leafPhoto, `${id}_standing-leaf.jpg`),
+            safeImg(f.cobPhoto, `${id}_standing-cob.jpg`),
           ]);
           return [f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt), plant, leaf, cob];
         })
       );
-      await safeWrite("Field – Standing",
-        ["Field Code", "Label", "Captured At", "Plant Photo", "Leaf Photo", "Cob Photo"],
+      
+      await safeWrite("Field – Standing", 
+        ["Field Code", "Label", "Captured At", "Plant Photo", "Leaf Photo", "Cob Photo"], 
         rows
       );
     }
 
     // ── Cutting ───────────────────────────────────────────────
     if (want("cutting")) {
+      console.log("Backing up cutting fields...");
       const cuttingFields = (await getFields()).filter(
-        (f): f is CuttingField => f.stage === "cutting"
+        (f): f is any => f.stage === "cutting"
       );
       const fieldList = await getFieldList();
       const labelOf = (code: string) => fieldList.find((f) => f.code === code)?.label ?? "";
@@ -235,18 +265,17 @@ export async function runBackup(
         cuttingFields.map(async (f) => {
           const id = fid(f.fieldCode);
           
-          // Ensure zone data exists with fallbacks
           const zoneA = f.zoneA || { plantPhoto: null, cobPhoto: null, height: null, color: null, density: null };
           const zoneB = f.zoneB || { plantPhoto: null, cobPhoto: null, height: null, color: null, density: null };
           const zoneC = f.zoneC || { plantPhoto: null, cobPhoto: null, height: null, color: null, density: null };
           
           const [zaPlant, zaCob, zbPlant, zbCob, zcPlant, zcCob] = await Promise.all([
-            u(zoneA.plantPhoto, `${id}_zoneA-plant.jpg`),
-            u(zoneA.cobPhoto, `${id}_zoneA-cob.jpg`),
-            u(zoneB.plantPhoto, `${id}_zoneB-plant.jpg`),
-            u(zoneB.cobPhoto, `${id}_zoneB-cob.jpg`),
-            u(zoneC.plantPhoto, `${id}_zoneC-plant.jpg`),
-            u(zoneC.cobPhoto, `${id}_zoneC-cob.jpg`),
+            safeImg(zoneA.plantPhoto, `${id}_zoneA-plant.jpg`),
+            safeImg(zoneA.cobPhoto, `${id}_zoneA-cob.jpg`),
+            safeImg(zoneB.plantPhoto, `${id}_zoneB-plant.jpg`),
+            safeImg(zoneB.cobPhoto, `${id}_zoneB-cob.jpg`),
+            safeImg(zoneC.plantPhoto, `${id}_zoneC-plant.jpg`),
+            safeImg(zoneC.cobPhoto, `${id}_zoneC-cob.jpg`),
           ]);
           
           return [
@@ -258,6 +287,7 @@ export async function runBackup(
           ];
         })
       );
+      
       await safeWrite("Field – Cutting", [
         "Field Code", "Label", "Captured At",
         "Zone A – Plant", "Zone A – Cob", "Zone A – Height", "Zone A – Color", "Zone A – Density",
@@ -269,8 +299,9 @@ export async function runBackup(
 
     // ── Chopped ───────────────────────────────────────────────
     if (want("chopped")) {
+      console.log("Backing up chopped fields...");
       const choppedFields = (await getFields()).filter(
-        (f): f is ChoppedField => f.stage === "chopped"
+        (f): f is any => f.stage === "chopped"
       );
       const fieldList = await getFieldList();
       const labelOf = (code: string) => fieldList.find((f) => f.code === code)?.label ?? "";
@@ -279,24 +310,25 @@ export async function runBackup(
       const rows = await Promise.all(
         choppedFields.map(async (f) => {
           const id = fid(f.fieldCode);
-          const photo = await u(f.photo, `${id}_chopped_photo.jpg`);
+          const photo = await safeImg(f.photo, `${id}_chopped_photo.jpg`);
           return [
             f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
-            photo, f.chopLength ?? "", f.uniformity ?? "", f.materialQuality ?? "", f.moisture ?? "",
+            photo, f.chopLength || "", f.uniformity || "", f.materialQuality || "", f.moisture || "",
           ];
         })
       );
-      await safeWrite("Field – Chopped",
-        ["Field Code", "Label", "Captured At", "Photo", "Chop Length", "Uniformity", "Material Quality", "Moisture"],
-        rows
-      );
+      
+      await safeWrite("Field – Chopped", [
+        "Field Code", "Label", "Captured At", "Photo", "Chop Length", "Uniformity", "Material Quality", "Moisture"
+      ], rows);
     }
 
     // ── Harvest field visits ──────────────────────────────────
     if (want("harvestField")) {
+      console.log("Backing up harvest field visits...");
       const harvestFields = await getHarvestFields();
       const farmerPhotoUri = await getFarmerPhoto();
-      const farmerUrl = await u(farmerPhotoUri, "farmer-profile_farmer.jpg");
+      const farmerUrl = await safeImg(farmerPhotoUri, "farmer-profile_farmer.jpg");
 
       const rows = await Promise.all(
         harvestFields.map(async (hf) => {
@@ -305,9 +337,9 @@ export async function runBackup(
           const health = hf.health || { plantStand: null, pest: null, disease: null, rainfall: null };
           
           const [overview, leaf, cob] = await Promise.all([
-            u(photos.overview, `HVT-${shortId}_harvest-overview.jpg`),
-            u(photos.leaf, `HVT-${shortId}_harvest-leaf.jpg`),
-            u(photos.cob, `HVT-${shortId}_harvest-cob.jpg`),
+            safeImg(photos.overview, `HVT-${shortId}_harvest-overview.jpg`),
+            safeImg(photos.leaf, `HVT-${shortId}_harvest-leaf.jpg`),
+            safeImg(photos.cob, `HVT-${shortId}_harvest-cob.jpg`),
           ]);
           
           return [
@@ -318,6 +350,7 @@ export async function runBackup(
           ];
         })
       );
+      
       await safeWrite("Harvest – Field Visits", [
         "Visit ID", "Date", "Area (acres)", "Crop Type",
         "Plant Stand", "Pest Pressure", "Disease", "Rainfall",
@@ -327,6 +360,7 @@ export async function runBackup(
 
     // ── Harvest weight records ────────────────────────────────
     if (want("harvestRecord")) {
+      console.log("Backing up harvest records...");
       const harvestRecords = await getHarvestRecords();
       const rows = harvestRecords.map((r) => [
         r.id, fmt(r.createdAt), r.harvestFieldId, r.weightKg, r.output,
@@ -339,6 +373,7 @@ export async function runBackup(
 
     // ── Post-harvest batches ──────────────────────────────────
     if (want("postHarvest")) {
+      console.log("Backing up post-harvest batches...");
       const postHarvest = await getPostHarvestBatches();
       const rows = await Promise.all(
         postHarvest.map(async (b) => {
@@ -347,10 +382,10 @@ export async function runBackup(
           const photos = b.photos || { storage: null, crossSection: null, sample: null, texture: null };
           
           const [storage, cross, sample, texture] = await Promise.all([
-            u(photos.storage, `${smpId}_silage-storage.jpg`, meta),
-            u(photos.crossSection, `${smpId}_silage-cross-section.jpg`, meta),
-            u(photos.sample, `${smpId}_silage-sample.jpg`, meta),
-            u(photos.texture, `${smpId}_silage-texture.jpg`, meta),
+            safeImg(photos.storage, `${smpId}_silage-storage.jpg`, meta),
+            safeImg(photos.crossSection, `${smpId}_silage-cross-section.jpg`, meta),
+            safeImg(photos.sample, `${smpId}_silage-sample.jpg`, meta),
+            safeImg(photos.texture, `${smpId}_silage-texture.jpg`, meta),
           ]);
           
           return [
@@ -360,6 +395,7 @@ export async function runBackup(
           ];
         })
       );
+      
       await safeWrite("Post Harvest – Batches", [
         "Batch ID", "Batch Name", "Date", "Visit ID",
         "pH", "Smell", "Mold",
@@ -369,6 +405,7 @@ export async function runBackup(
 
     // ── Fields registry (only on full sync) ──────────────────
     if (target === "full") {
+      console.log("Backing up fields registry...");
       const [fieldList, allFields] = await Promise.all([getFieldList(), getFields()]);
       const fieldRows = fieldList.map((f) => [
         f.code,
@@ -384,6 +421,7 @@ export async function runBackup(
           .map((c) => c.stage.charAt(0).toUpperCase() + c.stage.slice(1))
           .join(", ") || "—",
       ]);
+      
       await safeWrite("Fields",
         ["Code", "Label", "Location Code", "State", "District", "Latitude", "Longitude", "Created At", "Stages Completed"],
         fieldRows
@@ -392,11 +430,16 @@ export async function runBackup(
 
     const allErrors = [...errors, ...imageErrors];
     if (allErrors.length > 0) {
+      console.warn("Backup completed with errors:", allErrors);
       return { ok: false, error: allErrors.join(" | ") };
     }
+    
+    console.log("Backup completed successfully");
     return { ok: true };
 
   } catch (err: unknown) {
-    return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
+    const errorMsg = err instanceof Error ? err.message : "Unknown error";
+    console.error("Backup failed:", errorMsg);
+    return { ok: false, error: errorMsg };
   }
 }
