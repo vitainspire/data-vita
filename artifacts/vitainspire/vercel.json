@@ -1,0 +1,17 @@
+{
+  "buildCommand": "EXPO_PUBLIC_DOMAIN=$VERCEL_URL pnpm run build",
+  "outputDirectory": "static-build",
+  "installCommand": "pnpm install",
+  "framework": null,
+  "functions": {
+    "server/serve.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/server/serve.js"
+    }
+  ]
+}
