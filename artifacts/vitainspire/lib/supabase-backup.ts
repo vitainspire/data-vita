@@ -442,15 +442,88 @@ export async function runSupabaseBackup(): Promise<{ ok: boolean; error?: string
   }
 }
 
-// ─── Auto Backup on Data Changes ─────────────────────────────
+// ─── Test Function ────────────────────────────────────────────
 
-export async function scheduleSupabaseBackup(): Promise<void> {
-  // Run backup in background after a delay
-  setTimeout(async () => {
-    try {
-      await runSupabaseBackup();
-    } catch (error) {
-      console.warn("Background Supabase backup failed:", error);
+export async function testSupabaseConnection(): Promise<{ ok: boolean; error?: string; data?: any }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { ok: false, error: "Supabase not configured" };
+  }
+  
+  try {
+    // Test database connection
+    const { data, error } = await client.from('fields').select('count');
+    
+    if (error) {
+      return { ok: false, error: `Database connection failed: ${error.message}` };
     }
-  }, 5000); // 5 second delay
+    
+    // Test storage connection
+    const { data: buckets, error: storageError } = await client.storage.listBuckets();
+    
+    if (storageError) {
+      return { ok: false, error: `Storage connection failed: ${storageError.message}` };
+    }
+    
+    return { 
+      ok: true, 
+      data: { 
+        database: 'Connected',
+        storage: 'Connected',
+        buckets: buckets?.map(b => b.name) || []
+      }
+    };
+  } catch (error) {
+    return { ok: false, error: `Connection test failed: ${error}` };
+  }
+}
+
+export async function createTestData(): Promise<{ ok: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { ok: false, error: "Supabase not configured" };
+  }
+  
+  try {
+    const testFieldCode = `TEST-${Date.now()}`;
+    
+    // Insert test field
+    const { error: fieldError } = await client
+      .from('fields')
+      .insert({
+        code: testFieldCode,
+        label: 'Test Field',
+        location_code: 'TEST-LOC',
+        state: 'Test State',
+        district: 'Test District',
+        latitude: 12.9716,
+        longitude: 77.5946,
+        created_at: new Date().toISOString(),
+      });
+    
+    if (fieldError) {
+      return { ok: false, error: `Failed to insert test field: ${fieldError.message}` };
+    }
+    
+    // Insert test field capture
+    const { error: captureError } = await client
+      .from('field_captures')
+      .insert({
+        id: `test-${Date.now()}`,
+        field_code: testFieldCode,
+        stage: 'standing',
+        created_at: new Date().toISOString(),
+        plant_photo_url: '',
+        leaf_photo_url: '',
+        cob_photo_url: '',
+      });
+    
+    if (captureError) {
+      return { ok: false, error: `Failed to insert test capture: ${captureError.message}` };
+    }
+    
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: `Test data creation failed: ${error}` };
+  }
 }

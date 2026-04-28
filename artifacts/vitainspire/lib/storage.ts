@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scheduleSync } from "./sync";
 
 const KEYS = {
   fieldList: "vitainspire:fieldList",
@@ -152,13 +153,8 @@ export async function addField(field: Field): Promise<void> {
   all.unshift(field);
   await writeList(KEYS.fieldList, all);
   
-  // Schedule Supabase backup
-  try {
-    const { scheduleSupabaseBackup } = await import("./supabase-backup");
-    scheduleSupabaseBackup();
-  } catch (error) {
-    console.warn("Supabase backup scheduling failed:", error);
-  }
+  // Schedule backup
+  scheduleSync("full", 2000);
 }
 
 export async function deleteField(code: string): Promise<void> {
@@ -197,13 +193,8 @@ export async function saveField(field: FieldRecord): Promise<void> {
   await writeList(KEYS.fields, all);
   await addField({ code: field.fieldCode, createdAt: field.createdAt });
   
-  // Schedule Supabase backup
-  try {
-    const { scheduleSupabaseBackup } = await import("./supabase-backup");
-    scheduleSupabaseBackup();
-  } catch (error) {
-    console.warn("Supabase backup scheduling failed:", error);
-  }
+  // Schedule backup based on field stage
+  scheduleSync(field.stage, 2000);
 }
 
 export async function getFieldGroups(): Promise<FieldGroup[]> {
@@ -253,13 +244,8 @@ export async function saveHarvestField(field: HarvestField): Promise<void> {
   all.unshift(field);
   await writeList(KEYS.harvestFields, all);
   
-  // Schedule Supabase backup
-  try {
-    const { scheduleSupabaseBackup } = await import("./supabase-backup");
-    scheduleSupabaseBackup();
-  } catch (error) {
-    console.warn("Supabase backup scheduling failed:", error);
-  }
+  // Schedule backup
+  scheduleSync("harvestField", 2000);
 }
 
 export async function getHarvestRecords(): Promise<HarvestRecord[]> {
@@ -271,13 +257,8 @@ export async function saveHarvestRecord(record: HarvestRecord): Promise<void> {
   all.unshift(record);
   await writeList(KEYS.harvestRecords, all);
   
-  // Schedule Supabase backup
-  try {
-    const { scheduleSupabaseBackup } = await import("./supabase-backup");
-    scheduleSupabaseBackup();
-  } catch (error) {
-    console.warn("Supabase backup scheduling failed:", error);
-  }
+  // Schedule backup
+  scheduleSync("harvestRecord", 2000);
 }
 
 export async function getPostHarvestBatches(): Promise<PostHarvestBatch[]> {
@@ -291,13 +272,8 @@ export async function savePostHarvestBatch(
   all.unshift(batch);
   await writeList(KEYS.postHarvest, all);
   
-  // Schedule Supabase backup
-  try {
-    const { scheduleSupabaseBackup } = await import("./supabase-backup");
-    scheduleSupabaseBackup();
-  } catch (error) {
-    console.warn("Supabase backup scheduling failed:", error);
-  }
+  // Schedule backup
+  scheduleSync("postHarvest", 2000);
 }
 
 export async function getFarmerPhoto(): Promise<string | null> {

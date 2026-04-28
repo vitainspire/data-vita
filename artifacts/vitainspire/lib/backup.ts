@@ -167,20 +167,26 @@ async function writeSheet(
   }
 }
 
-// ─── Targeted backup ─────────────────────────────────────────
-// Each save screen calls runBackup with its specific target so only
-// the relevant sheet is written.
+// ─── Supabase Fallback ──────────────────────────────────────
 
-export async function runBackup(
-  target: BackupTarget = "full"
-): Promise<{ ok: boolean; error?: string }> {
-  // Use separated services if configured
-  if (USE_SEPARATED_SERVICES) {
-    const { runSeparatedBackup } = await import("./backup-separated");
-    return runSeparatedBackup(target);
+async function runSupabaseFallback(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { runSupabaseBackup, isSupabaseConfigured } = await import("./supabase-backup");
+    
+    if (!isSupabaseConfigured()) {
+      return { ok: false, error: "Supabase not configured" };
+    }
+    
+    return await runSupabaseBackup();
+  } catch (error) {
+    return { ok: false, error: `Supabase import failed: ${error}` };
   }
-  
-  if (!BACKUP_URL) return { ok: false, error: "No backup URL configured" };
+}
+
+// ─── Google Apps Script Backup ──────────────────────────────
+
+async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; error?: string }> {
+  if (!BACKUP_URL) return { ok: false, error: "No Google backup URL configured" };
 
   const errors: string[] = [];
   const imageErrors: string[] = [];
@@ -399,4 +405,40 @@ export async function runBackup(
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
   }
+}
+
+// ─── Targeted backup ─────────────────────────────────────────
+// Each save screen calls runBackup with its specific target so only
+// the relevant sheet is written.
+
+export async function runBackup(
+  target: BackupTarget = "full"
+): Promise<{ ok: boolean; error?: string }> {
+  // Use separated services if configured
+  if (USE_SEPARATED_SERVICES) {
+    const { runSeparatedBackup } = await import("./backup-separated");
+    return runSeparatedBackup(target);
+  }
+  
+  // Try Google Apps Script first if configured
+  if (BACKUP_URL) {
+    const googleResult = await runGoogleBackup(target);
+    if (googleResult.ok) {
+      return googleResult;
+    }
+    
+    // If Google fails, try Supabase fallback
+    console.log("Google Apps Script backup failed, trying Supabase fallback...");
+    const supabaseResult = await runSupabaseFallback();
+    if (supabaseResult.ok) {
+      return supabaseResult;
+    }
+    
+    // Both failed
+    return { 
+      ok: false, 
+      error: `Google: ${googleResult.error} | Supabase: ${supabaseResult.error}` 
+    };
+}
+
 }
