@@ -56,23 +56,31 @@ function doPost(e) {
   }
 }
 
-// Returns the spreadsheet for row writes — never touches Drive after first run.
-// Priority: CONFIG.SPREADSHEET_ID → cached PropertiesService ID → create new.
+// Returns the spreadsheet for row writes using only the Sheets API (no Drive).
+// Requires CONFIG.SPREADSHEET_ID to be set — run setupSpreadsheet() once to get it.
 function getSpreadsheetDirect_() {
   if (CONFIG.SPREADSHEET_ID) {
     return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   }
-
-  const props = PropertiesService.getScriptProperties();
-  const cachedId = props.getProperty('VITAINSPIRE_SS_ID');
-  if (cachedId) {
-    try { return SpreadsheetApp.openById(cachedId); } catch(e) { /* deleted — fall through */ }
+  // Fallback: check if setupSpreadsheet() was already run and cached an ID
+  const cached = PropertiesService.getScriptProperties().getProperty('VITAINSPIRE_SS_ID');
+  if (cached) {
+    return SpreadsheetApp.openById(cached);
   }
+  throw new Error(
+    'SPREADSHEET_ID not set. Open the Apps Script editor and run setupSpreadsheet() ' +
+    'to create the sheet, then paste the printed ID into CONFIG.SPREADSHEET_ID and redeploy.'
+  );
+}
 
-  // First-ever run: create a spreadsheet and cache its ID (no DriveApp needed)
+// ── Run this ONCE from the Apps Script editor (not via web app) ──────────────
+// It creates the spreadsheet, caches its ID, and logs the ID for you to copy
+// into CONFIG.SPREADSHEET_ID above.
+function setupSpreadsheet() {
   const ss = SpreadsheetApp.create('VitaInspire – Field Data');
-  props.setProperty('VITAINSPIRE_SS_ID', ss.getId());
-  return ss;
+  PropertiesService.getScriptProperties().setProperty('VITAINSPIRE_SS_ID', ss.getId());
+  Logger.log('Done! Copy this ID into CONFIG.SPREADSHEET_ID:\n' + ss.getId());
+  Logger.log('Sheet URL: ' + ss.getUrl());
 }
 
 // ============================================================
