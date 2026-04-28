@@ -31,7 +31,16 @@ export function isBackupConfigured(): boolean {
     const sheetsUrl = process.env.EXPO_PUBLIC_SHEETS_URL ?? "";
     return driveUrl.length > 0 && sheetsUrl.length > 0;
   }
-  return BACKUP_URL.length > 0;
+  
+  // Check for Google Apps Script
+  if (BACKUP_URL.length > 0) {
+    return true;
+  }
+  
+  // Check for Supabase fallback
+  const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+  const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  return SUPABASE_URL.length > 0 && SUPABASE_KEY.length > 0;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -170,15 +179,24 @@ async function writeSheet(
 // ─── Supabase Fallback ──────────────────────────────────────
 
 async function runSupabaseFallback(): Promise<{ ok: boolean; error?: string }> {
+  console.log("🗄️ runSupabaseFallback called");
+  
   try {
+    console.log("📦 Importing supabase-backup module...");
     const { runSupabaseBackup, isSupabaseConfigured } = await import("./supabase-backup");
     
+    console.log("🔧 Checking if Supabase is configured...");
     if (!isSupabaseConfigured()) {
+      console.log("❌ Supabase not configured");
       return { ok: false, error: "Supabase not configured" };
     }
     
-    return await runSupabaseBackup();
+    console.log("✅ Supabase configured, running backup...");
+    const result = await runSupabaseBackup();
+    console.log("📊 Supabase backup result:", result);
+    return result;
   } catch (error) {
+    console.log("❌ Supabase import/execution failed:", error);
     return { ok: false, error: `Supabase import failed: ${error}` };
   }
 }
@@ -414,31 +432,48 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
 export async function runBackup(
   target: BackupTarget = "full"
 ): Promise<{ ok: boolean; error?: string }> {
+  console.log("🎯 runBackup called with target:", target);
+  
   // Use separated services if configured
   if (USE_SEPARATED_SERVICES) {
+    console.log("🔧 Using separated services");
     const { runSeparatedBackup } = await import("./backup-separated");
     return runSeparatedBackup(target);
   }
   
   // Try Google Apps Script first if configured
   if (BACKUP_URL) {
+    console.log("📊 Trying Google Apps Script first...");
     const googleResult = await runGoogleBackup(target);
     if (googleResult.ok) {
+      console.log("✅ Google backup successful");
       return googleResult;
     }
     
     // If Google fails, try Supabase fallback
-    console.log("Google Apps Script backup failed, trying Supabase fallback...");
+    console.log("❌ Google Apps Script backup failed, trying Supabase fallback...");
     const supabaseResult = await runSupabaseFallback();
     if (supabaseResult.ok) {
+      console.log("✅ Supabase fallback successful");
       return supabaseResult;
     }
     
     // Both failed
+    console.log("❌ Both Google and Supabase failed");
     return { 
       ok: false, 
       error: `Google: ${googleResult.error} | Supabase: ${supabaseResult.error}` 
     };
-}
-
+  }
+  
+  // No Google URL configured, try Supabase directly
+  console.log("🗄️ No Google URL configured, using Supabase directly...");
+  const supabaseResult = await runSupabaseFallback();
+  if (supabaseResult.ok) {
+    console.log("✅ Supabase backup successful");
+    return supabaseResult;
+  }
+  
+  console.log("❌ Supabase backup failed");
+  return { ok: false, error: `No backup configured. Supabase: ${supabaseResult.error}` };
 }

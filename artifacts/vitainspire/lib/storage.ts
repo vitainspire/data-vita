@@ -185,6 +185,8 @@ export async function getFields(): Promise<FieldRecord[]> {
 }
 
 export async function saveField(field: FieldRecord): Promise<void> {
+  console.log("💾 saveField called with field:", field.fieldCode, field.stage);
+  
   if (!field.fieldCode) {
     throw new Error("saveField requires a fieldCode");
   }
@@ -194,6 +196,7 @@ export async function saveField(field: FieldRecord): Promise<void> {
   await addField({ code: field.fieldCode, createdAt: field.createdAt });
   
   // Schedule backup based on field stage
+  console.log("⏰ Scheduling sync for field stage:", field.stage);
   scheduleSync(field.stage, 2000);
 }
 

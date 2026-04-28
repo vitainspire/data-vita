@@ -33,24 +33,46 @@ export function useSyncState(): SyncState {
 }
 
 export async function triggerSync(target: BackupTarget = "full"): Promise<void> {
-  if (!isBackupConfigured()) return;
+  console.log("🔄 triggerSync called with target:", target);
+  console.log("🔧 isBackupConfigured():", isBackupConfigured());
+  
+  if (!isBackupConfigured()) {
+    console.log("❌ Backup not configured, exiting triggerSync");
+    return;
+  }
+  
   if (_state.syncing) {
+    console.log("⏳ Already syncing, scheduling another sync");
     scheduleSync("full", 3000);
     return;
   }
 
+  console.log("🚀 Starting backup process...");
   set({ syncing: true, lastError: null });
 
   const result = await runBackup(target);
+  console.log("📊 Backup result:", result);
 
   if (result.ok) {
+    console.log("✅ Backup successful");
     set({ syncing: false, lastSyncAt: Date.now(), lastError: null });
   } else {
+    console.log("❌ Backup failed:", result.error);
     set({ syncing: false, lastError: result.error ?? "Unknown error" });
   }
 }
 
 export function scheduleSync(target: BackupTarget = "full", delayMs = 0): void {
-  if (_pending) clearTimeout(_pending);
-  _pending = setTimeout(() => triggerSync(target), delayMs);
+  console.log("⏰ scheduleSync called with target:", target, "delay:", delayMs + "ms");
+  
+  if (_pending) {
+    console.log("🔄 Clearing existing sync timer");
+    clearTimeout(_pending);
+  }
+  
+  console.log("⏱️ Setting sync timer for", delayMs + "ms");
+  _pending = setTimeout(() => {
+    console.log("⏰ Timer fired, calling triggerSync");
+    triggerSync(target);
+  }, delayMs);
 }
