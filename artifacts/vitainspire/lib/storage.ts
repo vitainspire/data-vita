@@ -151,6 +151,14 @@ export async function addField(field: Field): Promise<void> {
   if (all.some((f) => f.code === field.code)) return;
   all.unshift(field);
   await writeList(KEYS.fieldList, all);
+  
+  // Schedule Supabase backup
+  try {
+    const { scheduleSupabaseBackup } = await import("./supabase-backup");
+    scheduleSupabaseBackup();
+  } catch (error) {
+    console.warn("Supabase backup scheduling failed:", error);
+  }
 }
 
 export async function deleteField(code: string): Promise<void> {
@@ -188,6 +196,14 @@ export async function saveField(field: FieldRecord): Promise<void> {
   all.unshift(field);
   await writeList(KEYS.fields, all);
   await addField({ code: field.fieldCode, createdAt: field.createdAt });
+  
+  // Schedule Supabase backup
+  try {
+    const { scheduleSupabaseBackup } = await import("./supabase-backup");
+    scheduleSupabaseBackup();
+  } catch (error) {
+    console.warn("Supabase backup scheduling failed:", error);
+  }
 }
 
 export async function getFieldGroups(): Promise<FieldGroup[]> {
@@ -236,6 +252,14 @@ export async function saveHarvestField(field: HarvestField): Promise<void> {
   const all = await getHarvestFields();
   all.unshift(field);
   await writeList(KEYS.harvestFields, all);
+  
+  // Schedule Supabase backup
+  try {
+    const { scheduleSupabaseBackup } = await import("./supabase-backup");
+    scheduleSupabaseBackup();
+  } catch (error) {
+    console.warn("Supabase backup scheduling failed:", error);
+  }
 }
 
 export async function getHarvestRecords(): Promise<HarvestRecord[]> {
@@ -246,6 +270,14 @@ export async function saveHarvestRecord(record: HarvestRecord): Promise<void> {
   const all = await getHarvestRecords();
   all.unshift(record);
   await writeList(KEYS.harvestRecords, all);
+  
+  // Schedule Supabase backup
+  try {
+    const { scheduleSupabaseBackup } = await import("./supabase-backup");
+    scheduleSupabaseBackup();
+  } catch (error) {
+    console.warn("Supabase backup scheduling failed:", error);
+  }
 }
 
 export async function getPostHarvestBatches(): Promise<PostHarvestBatch[]> {
@@ -258,6 +290,14 @@ export async function savePostHarvestBatch(
   const all = await getPostHarvestBatches();
   all.unshift(batch);
   await writeList(KEYS.postHarvest, all);
+  
+  // Schedule Supabase backup
+  try {
+    const { scheduleSupabaseBackup } = await import("./supabase-backup");
+    scheduleSupabaseBackup();
+  } catch (error) {
+    console.warn("Supabase backup scheduling failed:", error);
+  }
 }
 
 export async function getFarmerPhoto(): Promise<string | null> {
