@@ -16,6 +16,7 @@ import { ChipGroup } from "@/components/ChipGroup";
 import { PhotoSlot } from "@/components/PhotoSlot";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { StepHeader } from "@/components/StepHeader";
+import { SyncButton } from "@/components/SyncButton";
 import { useToast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 import {
@@ -126,13 +127,16 @@ export default function PostHarvestTab() {
       }}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={{ gap: 6 }}>
-        <Text style={[styles.eyebrow, { color: colors.accent }]}>
-          POST HARVEST
-        </Text>
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          Silage batch tracking
-        </Text>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <View style={{ gap: 6, flex: 1 }}>
+          <Text style={[styles.eyebrow, { color: colors.accent }]}>
+            POST HARVEST
+          </Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>
+            Silage batch tracking
+          </Text>
+        </View>
+        <SyncButton />
       </View>
 
       <StepHeader

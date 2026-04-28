@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActionCard } from "@/components/ActionCard";
 import { PhotoSlot } from "@/components/PhotoSlot";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { SyncButton } from "@/components/SyncButton";
 import { useColors } from "@/hooks/useColors";
 import {
   getFarmerPhoto,
@@ -160,6 +161,7 @@ export default function HarvestTab() {
             Field visit in progress
           </Text>
         </View>
+        <SyncButton />
       </View>
 
       <View style={{ gap: 12 }}>

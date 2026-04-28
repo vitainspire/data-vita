@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { SyncButton } from "@/components/SyncButton";
 import { useColors } from "@/hooks/useColors";
 import { FieldGroup, FieldStage, getFieldGroups } from "@/lib/storage";
 
@@ -86,16 +87,19 @@ export default function FieldCaptureTab() {
       }}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={{ gap: 6 }}>
-        <Text style={[styles.eyebrow, { color: colors.accent }]}>
-          FIELD CAPTURE
-        </Text>
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          Your fields
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Track each field through Standing, Cutting and Chopped stages.
-        </Text>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <View style={{ gap: 6, flex: 1 }}>
+          <Text style={[styles.eyebrow, { color: colors.accent }]}>
+            FIELD CAPTURE
+          </Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>
+            Your fields
+          </Text>
+          <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+            Track each field through Standing, Cutting and Chopped stages.
+          </Text>
+        </View>
+        <SyncButton />
       </View>
 
       <View
