@@ -101,14 +101,25 @@ async function writeSheet(
   rows: unknown[][]
 ): Promise<void> {
   if (!BACKUP_URL) return;
+  
+  // Sanitize rows to prevent Google Apps Script errors
+  const sanitizedRows = rows.map(row => 
+    row.map(cell => {
+      if (cell === null || cell === undefined) return "";
+      if (typeof cell === "string") return cell;
+      if (typeof cell === "number") return cell;
+      return String(cell);
+    })
+  );
+  
   const res = await fetch(BACKUP_URL, {
     method: "POST",
     redirect: "follow",
     headers: { "Content-Type": "text/plain" },
-    body: JSON.stringify({ type: "rows", sheetName, headers, rows }),
+    body: JSON.stringify({ type: "rows", sheetName, headers, rows: sanitizedRows }),
   });
   const text = await res.text();
-  let parsed: { status?: string };
+  let parsed: { status?: string; message?: string };
   try { parsed = JSON.parse(text); } catch { parsed = {}; }
   if (parsed.status !== "success") {
     throw new Error(`Sheet "${sheetName}" write failed: ${text.slice(0, 200)}`);
@@ -236,15 +247,19 @@ export async function runBackup(
       const rows = await Promise.all(
         harvestFields.map(async (hf) => {
           const shortId = hf.id.substring(0, 8);
+          const photos = hf.photos || { overview: null, leaf: null, cob: null };
+          const health = hf.health || { plantStand: null, pest: null, disease: null, rainfall: null };
+          
           const [overview, leaf, cob] = await Promise.all([
-            u(hf.photos?.overview ?? null, `HVT-${shortId}_harvest-overview.jpg`),
-            u(hf.photos?.leaf     ?? null, `HVT-${shortId}_harvest-leaf.jpg`),
-            u(hf.photos?.cob      ?? null, `HVT-${shortId}_harvest-cob.jpg`),
+            u(photos.overview, `HVT-${shortId}_harvest-overview.jpg`),
+            u(photos.leaf, `HVT-${shortId}_harvest-leaf.jpg`),
+            u(photos.cob, `HVT-${shortId}_harvest-cob.jpg`),
           ]);
+          
           return [
-            hf.id, fmt(hf.createdAt), hf.fieldArea, hf.cropType,
-            hf.health?.plantStand ?? "", hf.health?.pest ?? "",
-            hf.health?.disease ?? "", hf.health?.rainfall ?? "",
+            hf.id, fmt(hf.createdAt), hf.fieldArea || "", hf.cropType || "",
+            health.plantStand || "", health.pest || "",
+            health.disease || "", health.rainfall || "",
             farmerUrl, overview, leaf, cob,
           ];
         })
@@ -275,15 +290,18 @@ export async function runBackup(
         postHarvest.map(async (b) => {
           const smpId = `SMP-${b.id.substring(0, 8)}`;
           const meta = { fieldId: b.harvestFieldId.substring(0, 8) };
+          const photos = b.photos || { storage: null, crossSection: null, sample: null, texture: null };
+          
           const [storage, cross, sample, texture] = await Promise.all([
-            u(b.photos?.storage      ?? null, `${smpId}_silage-storage.jpg`,       meta),
-            u(b.photos?.crossSection ?? null, `${smpId}_silage-cross-section.jpg`, meta),
-            u(b.photos?.sample       ?? null, `${smpId}_silage-sample.jpg`,        meta),
-            u(b.photos?.texture      ?? null, `${smpId}_silage-texture.jpg`,       meta),
+            u(photos.storage, `${smpId}_silage-storage.jpg`, meta),
+            u(photos.crossSection, `${smpId}_silage-cross-section.jpg`, meta),
+            u(photos.sample, `${smpId}_silage-sample.jpg`, meta),
+            u(photos.texture, `${smpId}_silage-texture.jpg`, meta),
           ]);
+          
           return [
-            b.id, b.batchName, fmt(b.createdAt), b.harvestFieldId,
-            b.ph, b.smell ?? "", b.mold ?? "",
+            b.id, b.batchName || "", fmt(b.createdAt), b.harvestFieldId || "",
+            b.ph || "", b.smell || "", b.mold || "",
             storage, cross, sample, texture,
           ];
         })
