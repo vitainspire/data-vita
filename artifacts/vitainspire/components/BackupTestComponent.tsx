@@ -18,9 +18,30 @@ export default function BackupTestComponent() {
         fieldCode: `TEST-${Date.now()}`,
         stage: 'standing',
         createdAt: Date.now(),
-        plantPhoto: null,
-        leafPhoto: null,
-        cobPhoto: null,
+        zoneA: {
+          plantPhoto: null,
+          leafPhoto: null,
+          cobPhoto: null,
+          height: null,
+          color: null,
+          density: null,
+        },
+        zoneB: {
+          plantPhoto: null,
+          leafPhoto: null,
+          cobPhoto: null,
+          height: null,
+          color: null,
+          density: null,
+        },
+        zoneC: {
+          plantPhoto: null,
+          leafPhoto: null,
+          cobPhoto: null,
+          height: null,
+          color: null,
+          density: null,
+        },
       };
 
       console.log('📝 Created test field:', testField);

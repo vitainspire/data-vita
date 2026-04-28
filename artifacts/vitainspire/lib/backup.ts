@@ -232,18 +232,38 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
       const rows = await Promise.all(
         standingFields.map(async (f) => {
           const id = fid(f.fieldCode);
-          const [plant, leaf, cob] = await Promise.all([
-            u(f.plantPhoto, `${id}_standing-plant.jpg`),
-            u(f.leafPhoto,  `${id}_standing-leafcob.jpg`),
-            u(f.cobPhoto,   `${id}_standing-cob.jpg`),
+          
+          // Ensure zone data exists with fallbacks
+          const zoneA = f.zoneA || { plantPhoto: null, leafPhoto: null, cobPhoto: null, height: null, color: null, density: null };
+          const zoneB = f.zoneB || { plantPhoto: null, leafPhoto: null, cobPhoto: null, height: null, color: null, density: null };
+          const zoneC = f.zoneC || { plantPhoto: null, leafPhoto: null, cobPhoto: null, height: null, color: null, density: null };
+          
+          const [zaPlant, zaLeaf, zaCob, zbPlant, zbLeaf, zbCob, zcPlant, zcLeaf, zcCob] = await Promise.all([
+            u(zoneA.plantPhoto, `${id}_zoneA-plant.jpg`),
+            u(zoneA.leafPhoto, `${id}_zoneA-leaf.jpg`),
+            u(zoneA.cobPhoto, `${id}_zoneA-cob.jpg`),
+            u(zoneB.plantPhoto, `${id}_zoneB-plant.jpg`),
+            u(zoneB.leafPhoto, `${id}_zoneB-leaf.jpg`),
+            u(zoneB.cobPhoto, `${id}_zoneB-cob.jpg`),
+            u(zoneC.plantPhoto, `${id}_zoneC-plant.jpg`),
+            u(zoneC.leafPhoto, `${id}_zoneC-leaf.jpg`),
+            u(zoneC.cobPhoto, `${id}_zoneC-cob.jpg`),
           ]);
-          return [f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt), plant, leaf, cob];
+          
+          return [
+            f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
+            zaPlant, zaLeaf, zaCob,
+            zbPlant, zbLeaf, zbCob,
+            zcPlant, zcLeaf, zcCob,
+          ];
         })
       );
-      await safeWrite("Field – Standing",
-        ["Field Code", "Label", "Captured At", "Plant Photo", "Leaf Photo", "Cob Photo"],
-        rows
-      );
+      await safeWrite("Field – Standing", [
+        "Field Code", "Label", "Captured At",
+        "Zone A – Plant", "Zone A – Leaf", "Zone A – Cob",
+        "Zone B – Plant", "Zone B – Leaf", "Zone B – Cob", 
+        "Zone C – Plant", "Zone C – Leaf", "Zone C – Cob",
+      ], rows);
     }
 
     // ── Cutting ───────────────────────────────────────────────

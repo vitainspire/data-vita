@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { FieldGroup, FieldStage, getFieldGroups } from "@/lib/storage";
+import BackupTestComponent from "@/components/BackupTestComponent";
 
 const STAGE_ORDER: Array<{
   key: FieldStage;
@@ -97,6 +98,9 @@ export default function FieldCaptureTab() {
           Track each field through Standing, Cutting and Chopped stages.
         </Text>
       </View>
+
+      {/* Backup Test Component - Remove this after testing */}
+      <BackupTestComponent />
 
       <View
         style={[

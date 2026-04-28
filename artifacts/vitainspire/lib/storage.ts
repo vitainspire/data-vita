@@ -33,13 +33,14 @@ export type StandingField = {
   fieldCode: string;
   stage: "standing";
   createdAt: number;
-  plantPhoto: string | null;
-  leafPhoto: string | null;
-  cobPhoto: string | null;
+  zoneA: ZoneData;
+  zoneB: ZoneData;
+  zoneC: ZoneData;
 };
 
 export type ZoneData = {
   plantPhoto: string | null;
+  leafPhoto: string | null;
   cobPhoto: string | null;
   height: string | null;
   color: string | null;

@@ -155,10 +155,20 @@ async function upsertStandingFields(fields: StandingField[]): Promise<void> {
   const fieldsWithUrls = await Promise.all(
     fields.map(async (f) => {
       const fieldId = `${f.fieldCode}_standing`;
-      const [plantUrl, leafUrl, cobUrl] = await Promise.all([
-        uploadImageToSupabase(f.plantPhoto, `${fieldId}_plant.jpg`),
-        uploadImageToSupabase(f.leafPhoto, `${fieldId}_leaf.jpg`),
-        uploadImageToSupabase(f.cobPhoto, `${fieldId}_cob.jpg`),
+      const [
+        zaPlantUrl, zaLeafUrl, zaCobUrl,
+        zbPlantUrl, zbLeafUrl, zbCobUrl,
+        zcPlantUrl, zcLeafUrl, zcCobUrl
+      ] = await Promise.all([
+        uploadImageToSupabase(f.zoneA?.plantPhoto, `${fieldId}_zoneA_plant.jpg`),
+        uploadImageToSupabase(f.zoneA?.leafPhoto, `${fieldId}_zoneA_leaf.jpg`),
+        uploadImageToSupabase(f.zoneA?.cobPhoto, `${fieldId}_zoneA_cob.jpg`),
+        uploadImageToSupabase(f.zoneB?.plantPhoto, `${fieldId}_zoneB_plant.jpg`),
+        uploadImageToSupabase(f.zoneB?.leafPhoto, `${fieldId}_zoneB_leaf.jpg`),
+        uploadImageToSupabase(f.zoneB?.cobPhoto, `${fieldId}_zoneB_cob.jpg`),
+        uploadImageToSupabase(f.zoneC?.plantPhoto, `${fieldId}_zoneC_plant.jpg`),
+        uploadImageToSupabase(f.zoneC?.leafPhoto, `${fieldId}_zoneC_leaf.jpg`),
+        uploadImageToSupabase(f.zoneC?.cobPhoto, `${fieldId}_zoneC_cob.jpg`),
       ]);
       
       return {
@@ -166,9 +176,27 @@ async function upsertStandingFields(fields: StandingField[]): Promise<void> {
         field_code: f.fieldCode,
         stage: f.stage,
         created_at: new Date(f.createdAt).toISOString(),
-        plant_photo_url: plantUrl,
-        leaf_photo_url: leafUrl,
-        cob_photo_url: cobUrl,
+        // Zone A
+        zone_a_plant_photo_url: zaPlantUrl,
+        zone_a_leaf_photo_url: zaLeafUrl,
+        zone_a_cob_photo_url: zaCobUrl,
+        zone_a_height: f.zoneA?.height,
+        zone_a_color: f.zoneA?.color,
+        zone_a_density: f.zoneA?.density,
+        // Zone B
+        zone_b_plant_photo_url: zbPlantUrl,
+        zone_b_leaf_photo_url: zbLeafUrl,
+        zone_b_cob_photo_url: zbCobUrl,
+        zone_b_height: f.zoneB?.height,
+        zone_b_color: f.zoneB?.color,
+        zone_b_density: f.zoneB?.density,
+        // Zone C
+        zone_c_plant_photo_url: zcPlantUrl,
+        zone_c_leaf_photo_url: zcLeafUrl,
+        zone_c_cob_photo_url: zcCobUrl,
+        zone_c_height: f.zoneC?.height,
+        zone_c_color: f.zoneC?.color,
+        zone_c_density: f.zoneC?.density,
       };
     })
   );

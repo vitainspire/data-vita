@@ -31,27 +31,25 @@ CREATE TABLE field_captures (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     
-    -- Standing fields
-    plant_photo_url TEXT,
-    leaf_photo_url TEXT,
-    cob_photo_url TEXT,
-    
-    -- Cutting fields - Zone A
+    -- Zone A (used by standing and cutting)
     zone_a_plant_photo_url TEXT,
+    zone_a_leaf_photo_url TEXT,
     zone_a_cob_photo_url TEXT,
     zone_a_height TEXT,
     zone_a_color TEXT,
     zone_a_density TEXT,
     
-    -- Cutting fields - Zone B
+    -- Zone B (used by standing and cutting)
     zone_b_plant_photo_url TEXT,
+    zone_b_leaf_photo_url TEXT,
     zone_b_cob_photo_url TEXT,
     zone_b_height TEXT,
     zone_b_color TEXT,
     zone_b_density TEXT,
     
-    -- Cutting fields - Zone C
+    -- Zone C (used by standing and cutting)
     zone_c_plant_photo_url TEXT,
+    zone_c_leaf_photo_url TEXT,
     zone_c_cob_photo_url TEXT,
     zone_c_height TEXT,
     zone_c_color TEXT,
