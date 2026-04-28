@@ -3,9 +3,10 @@
   "outputDirectory": "static-build",
   "installCommand": "pnpm install",
   "framework": null,
+  "nodeVersion": "18.x",
   "functions": {
     "server/serve.js": {
-      "runtime": "nodejs18.x"
+      "maxDuration": 30
     }
   },
   "rewrites": [
