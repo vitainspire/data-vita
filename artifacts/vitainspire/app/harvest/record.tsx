@@ -23,6 +23,7 @@ import {
   makeId,
   saveHarvestRecord,
 } from "@/lib/storage";
+import { scheduleSync } from "@/lib/sync";
 
 export default function RecordHarvestScreen() {
   const colors = useColors();
@@ -53,17 +54,23 @@ export default function RecordHarvestScreen() {
   const onSubmit = async () => {
     if (!selectedId || !output) return;
     setSaving(true);
-    const record: HarvestRecord = {
-      id: makeId(),
-      createdAt: Date.now(),
-      harvestFieldId: selectedId,
-      weightKg: weight,
-      output,
-    };
-    await saveHarvestRecord(record);
-    setSaving(false);
-    toast.show("Harvest recorded");
-    router.back();
+    try {
+      const record: HarvestRecord = {
+        id: makeId(),
+        createdAt: Date.now(),
+        harvestFieldId: selectedId,
+        weightKg: weight,
+        output,
+      };
+      await saveHarvestRecord(record);
+      scheduleSync();
+      toast.show("Harvest recorded");
+      router.back();
+    } catch (e) {
+      toast.show("Save failed – please try again");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

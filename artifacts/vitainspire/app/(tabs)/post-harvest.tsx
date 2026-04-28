@@ -26,6 +26,7 @@ import {
   PostHarvestBatch,
   savePostHarvestBatch,
 } from "@/lib/storage";
+import { scheduleSync } from "@/lib/sync";
 
 export default function PostHarvestTab() {
   const colors = useColors();
@@ -86,22 +87,28 @@ export default function PostHarvestTab() {
   const onSubmit = async () => {
     if (!selectedId) return;
     setSaving(true);
-    const batch: PostHarvestBatch = {
-      id: makeId(),
-      createdAt: Date.now(),
-      harvestFieldId: selectedId,
-      batchName: batchName || `Batch ${new Date().toLocaleDateString()}`,
-      photos: { storage, crossSection, sample, texture },
-      ph,
-      smell,
-      mold,
-    };
-    await savePostHarvestBatch(batch);
-    const updated = await getPostHarvestBatches();
-    setBatches(updated);
-    setSaving(false);
-    toast.show("Silage batch submitted");
-    reset();
+    try {
+      const batch: PostHarvestBatch = {
+        id: makeId(),
+        createdAt: Date.now(),
+        harvestFieldId: selectedId,
+        batchName: batchName || `Batch ${new Date().toLocaleDateString()}`,
+        photos: { storage, crossSection, sample, texture },
+        ph,
+        smell,
+        mold,
+      };
+      await savePostHarvestBatch(batch);
+      scheduleSync();
+      const updated = await getPostHarvestBatches();
+      setBatches(updated);
+      toast.show("Silage batch submitted");
+      reset();
+    } catch (e) {
+      toast.show("Save failed – please try again");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const canStep1 = !!selectedId;

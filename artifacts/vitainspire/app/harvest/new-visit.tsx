@@ -25,6 +25,7 @@ import {
   makeId,
   saveHarvestField,
 } from "@/lib/storage";
+import { scheduleSync } from "@/lib/sync";
 
 const CROP_TYPES = ["Maize", "Rice", "Wheat", "Sugarcane", "Cotton"];
 
@@ -65,20 +66,26 @@ export default function NewVisitScreen() {
 
   const onSave = async () => {
     setSaving(true);
-    const farmerPhoto = await getFarmerPhoto();
-    const record: HarvestField = {
-      id: makeId(),
-      createdAt: Date.now(),
-      fieldArea,
-      cropType: cropType || "",
-      health: { plantStand, pest, disease, rainfall },
-      photos: { overview, leaf, cob },
-      farmerPhoto,
-    };
-    await saveHarvestField(record);
-    setSaving(false);
-    toast.show("Field saved");
-    router.back();
+    try {
+      const farmerPhoto = await getFarmerPhoto();
+      const record: HarvestField = {
+        id: makeId(),
+        createdAt: Date.now(),
+        fieldArea,
+        cropType: cropType || "",
+        health: { plantStand, pest, disease, rainfall },
+        photos: { overview, leaf, cob },
+        farmerPhoto,
+      };
+      await saveHarvestField(record);
+      scheduleSync();
+      toast.show("Field saved");
+      router.back();
+    } catch (e) {
+      toast.show("Save failed – please try again");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

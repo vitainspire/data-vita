@@ -15,10 +15,16 @@ export function makeId(): string {
 
 export type FieldStage = "standing" | "cutting" | "chopped";
 
+export type GpsCoords = { latitude: number; longitude: number };
+
 export type Field = {
   code: string;
   createdAt: number;
   label?: string;
+  state?: string;
+  district?: string;
+  locationCode?: string; // e.g. "AP-GN"
+  gps?: GpsCoords | null;
 };
 
 export type StandingField = {
@@ -47,6 +53,10 @@ export type CuttingField = {
   zoneA: ZoneData;
   zoneB: ZoneData;
   zoneC: ZoneData;
+  harvestMethod: string | null;
+  cropCondition: string | null;
+  cuttingHeight: string | null;
+  lodging: string | null;
 };
 
 export type ChoppedField = {
@@ -55,7 +65,9 @@ export type ChoppedField = {
   stage: "chopped";
   createdAt: number;
   photo: string | null;
-  chopSize: string | null;
+  chopLength: string | null;
+  uniformity: string | null;
+  materialQuality: string | null;
   moisture: string | null;
 };
 

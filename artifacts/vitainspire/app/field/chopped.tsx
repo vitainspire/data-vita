@@ -9,6 +9,7 @@ import { PrimaryButton } from "@/components/PrimaryButton";
 import { useToast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 import { ChoppedField, makeId, saveField } from "@/lib/storage";
+import { scheduleSync } from "@/lib/sync";
 
 export default function ChoppedScreen() {
   const colors = useColors();
@@ -18,28 +19,38 @@ export default function ChoppedScreen() {
   const params = useLocalSearchParams<{ fieldCode?: string }>();
   const fieldCode = String(params.fieldCode || "");
   const [photo, setPhoto] = useState<string | null>(null);
-  const [chopSize, setChopSize] = useState<string | null>(null);
+  const [chopLength, setChopLength] = useState<string | null>(null);
+  const [uniformity, setUniformity] = useState<string | null>(null);
+  const [materialQuality, setMaterialQuality] = useState<string | null>(null);
   const [moisture, setMoisture] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const canSave = !!fieldCode && (!!photo || !!chopSize || !!moisture);
+  const canSave = !!fieldCode && (!!photo || !!chopLength || !!uniformity || !!materialQuality || !!moisture);
 
   const onSave = async () => {
     if (!fieldCode) return;
     setSaving(true);
-    const record: ChoppedField = {
-      id: makeId(),
-      fieldCode,
-      stage: "chopped",
-      createdAt: Date.now(),
-      photo,
-      chopSize,
-      moisture,
-    };
-    await saveField(record);
-    setSaving(false);
-    toast.show("Chopped capture saved");
-    router.back();
+    try {
+      const record: ChoppedField = {
+        id: makeId(),
+        fieldCode,
+        stage: "chopped",
+        createdAt: Date.now(),
+        photo,
+        chopLength,
+        uniformity,
+        materialQuality,
+        moisture,
+      };
+      await saveField(record);
+      scheduleSync();
+      toast.show("Chopped capture saved");
+      router.back();
+    } catch (e) {
+      toast.show("Save failed – please try again");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const isWeb = Platform.OS === "web";
@@ -75,10 +86,22 @@ export default function ChoppedScreen() {
 
       <View style={{ gap: 18 }}>
         <ChipGroup
-          label="Chop Size"
-          options={["Small", "Medium", "Large"]}
-          value={chopSize}
-          onChange={setChopSize}
+          label="Chop Length"
+          options={["Fine", "Medium", "Coarse"]}
+          value={chopLength}
+          onChange={setChopLength}
+        />
+        <ChipGroup
+          label="Uniformity"
+          options={["Uniform", "Mixed", "Uneven"]}
+          value={uniformity}
+          onChange={setUniformity}
+        />
+        <ChipGroup
+          label="Material Quality"
+          options={["Good", "Fair", "Poor"]}
+          value={materialQuality}
+          onChange={setMaterialQuality}
         />
         <ChipGroup
           label="Moisture"

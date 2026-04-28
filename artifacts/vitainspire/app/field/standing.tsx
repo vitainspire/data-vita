@@ -8,6 +8,7 @@ import { PrimaryButton } from "@/components/PrimaryButton";
 import { useToast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 import { makeId, saveField, StandingField } from "@/lib/storage";
+import { scheduleSync } from "@/lib/sync";
 
 export default function StandingScreen() {
   const colors = useColors();
@@ -26,19 +27,25 @@ export default function StandingScreen() {
   const onSave = async () => {
     if (!fieldCode) return;
     setSaving(true);
-    const record: StandingField = {
-      id: makeId(),
-      fieldCode,
-      stage: "standing",
-      createdAt: Date.now(),
-      plantPhoto: plant,
-      leafPhoto: leaf,
-      cobPhoto: cob,
-    };
-    await saveField(record);
-    setSaving(false);
-    toast.show("Standing crop captured");
-    router.back();
+    try {
+      const record: StandingField = {
+        id: makeId(),
+        fieldCode,
+        stage: "standing",
+        createdAt: Date.now(),
+        plantPhoto: plant,
+        leafPhoto: leaf,
+        cobPhoto: cob,
+      };
+      await saveField(record);
+      scheduleSync();
+      toast.show("Standing crop captured");
+      router.back();
+    } catch (e) {
+      toast.show("Save failed – please try again");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const isWeb = Platform.OS === "web";

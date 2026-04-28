@@ -10,6 +10,7 @@ import { StepHeader } from "@/components/StepHeader";
 import { useToast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 import { CuttingField, makeId, saveField, ZoneData } from "@/lib/storage";
+import { scheduleSync } from "@/lib/sync";
 
 const EMPTY_ZONE: ZoneData = {
   plantPhoto: null,
@@ -36,6 +37,10 @@ export default function CuttingScreen() {
   const [zoneA, setZoneA] = useState<ZoneData>({ ...EMPTY_ZONE });
   const [zoneB, setZoneB] = useState<ZoneData>({ ...EMPTY_ZONE });
   const [zoneC, setZoneC] = useState<ZoneData>({ ...EMPTY_ZONE });
+  const [harvestMethod, setHarvestMethod] = useState<string | null>(null);
+  const [cropCondition, setCropCondition] = useState<string | null>(null);
+  const [cuttingHeight, setCuttingHeight] = useState<string | null>(null);
+  const [lodging, setLodging] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const zones = [zoneA, zoneB, zoneC];
@@ -54,19 +59,29 @@ export default function CuttingScreen() {
     }
     if (!fieldCode) return;
     setSaving(true);
-    const record: CuttingField = {
-      id: makeId(),
-      fieldCode,
-      stage: "cutting",
-      createdAt: Date.now(),
-      zoneA,
-      zoneB,
-      zoneC,
-    };
-    await saveField(record);
-    setSaving(false);
-    toast.show("Cutting capture saved");
-    router.back();
+    try {
+      const record: CuttingField = {
+        id: makeId(),
+        fieldCode,
+        stage: "cutting",
+        createdAt: Date.now(),
+        zoneA,
+        zoneB,
+        zoneC,
+        harvestMethod,
+        cropCondition,
+        cuttingHeight,
+        lodging,
+      };
+      await saveField(record);
+      scheduleSync();
+      toast.show("Cutting capture saved");
+      router.back();
+    } catch (e) {
+      toast.show("Save failed – please try again");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const isWeb = Platform.OS === "web";
@@ -123,6 +138,34 @@ export default function CuttingScreen() {
           options={["Dense", "Normal", "Sparse"]}
           value={current.density}
           onChange={(v) => updateZone({ density: v })}
+        />
+      </View>
+
+      {/* General cutting data - shown on all zones */}
+      <View style={{ gap: 18 }}>
+        <ChipGroup
+          label="Harvest Method"
+          options={["Manual", "Machine"]}
+          value={harvestMethod}
+          onChange={setHarvestMethod}
+        />
+        <ChipGroup
+          label="Crop Condition at Cut"
+          options={["Green", "Dry", "Mixed"]}
+          value={cropCondition}
+          onChange={setCropCondition}
+        />
+        <ChipGroup
+          label="Cutting Height"
+          options={["Low", "Medium", "High"]}
+          value={cuttingHeight}
+          onChange={setCuttingHeight}
+        />
+        <ChipGroup
+          label="Lodging"
+          options={["None", "Some", "Heavy"]}
+          value={lodging}
+          onChange={setLodging}
         />
       </View>
 
