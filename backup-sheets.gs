@@ -37,17 +37,35 @@ function doGet() {
     .setMimeType(ContentService.MimeType.TEXT);
 }
 
-// ─── Sheet write ──────────────────────────────────────────────
+// ─── Sheet write (upsert — never overwrites by key) ──────────
 
 function handleRows_(data) {
   var ss    = getOrCreateSpreadsheet_();
   var sheet = getOrCreateSheet_(ss, data.sheetName);
   ensureHeader_(sheet, data.headers);
-  clearDataRows_(sheet);
   var rows = data.rows || [];
   if (rows.length > 0 && !Array.isArray(rows[0])) rows = [rows];
-  rows.forEach(function(row) { sheet.appendRow(row); });
+  rows.forEach(function(row) { upsertRow_(sheet, row); });
   return json_({ status: "success", sheetName: data.sheetName, rowCount: rows.length, spreadsheetUrl: ss.getUrl() });
+}
+
+// Insert or update a row. First column is the primary key.
+function upsertRow_(sheet, row) {
+  if (!row || row.length === 0) return;
+  var key = String(row[0]);
+  if (!key) return;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    var keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < keys.length; i++) {
+      if (String(keys[i][0]) === key) {
+        sheet.getRange(i + 2, 1, 1, row.length).setValues([row]);
+        return;
+      }
+    }
+  }
+  sheet.appendRow(row);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -76,11 +94,6 @@ function ensureHeader_(sheet, cols) {
          .setFontColor("#ffffff");
     sheet.setFrozenRows(1);
   }
-}
-
-function clearDataRows_(sheet) {
-  var last = sheet.getLastRow();
-  if (last > 1) sheet.deleteRows(2, last - 1);
 }
 
 function json_(obj) {
