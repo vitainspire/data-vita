@@ -1,12 +1,14 @@
 import { Feather } from "@expo/vector-icons";
 import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { useToast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 import { triggerSync, useSyncState } from "@/lib/sync";
 
 export function SyncButton() {
   const colors = useColors();
+  const toast = useToast();
   const { syncing, lastSyncAt, lastError } = useSyncState();
 
   const dotColor = lastError
@@ -31,14 +33,36 @@ export function SyncButton() {
         ? "Synced"
         : "Sync";
 
+  const handlePress = async () => {
+    if (syncing) return;
+
+    if (lastError) {
+      Alert.alert("Sync Error", lastError, [
+        { text: "Retry", onPress: () => triggerSync("full") },
+        { text: "Dismiss", style: "cancel" },
+      ]);
+      return;
+    }
+
+    await triggerSync("full");
+
+    const { getSyncState } = await import("@/lib/sync");
+    const state = getSyncState();
+    if (state.lastError) {
+      toast.show("Sync failed: " + state.lastError);
+    } else {
+      toast.show("Synced successfully");
+    }
+  };
+
   return (
     <Pressable
-      onPress={() => !syncing && triggerSync("full")}
+      onPress={handlePress}
       style={({ pressed }) => [
         styles.button,
         {
           backgroundColor: colors.card,
-          borderColor: colors.border,
+          borderColor: lastError ? colors.destructive : colors.border,
           borderRadius: colors.radius / 1.5,
           opacity: pressed ? 0.7 : 1,
         },
