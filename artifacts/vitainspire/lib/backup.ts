@@ -13,8 +13,8 @@ import {
   StandingField,
 } from "./storage";
 
-const DRIVE_URL  = process.env.EXPO_PUBLIC_DRIVE_URL  ?? "";
-const SHEETS_URL = process.env.EXPO_PUBLIC_SHEETS_URL ?? "";
+const DRIVE_URL  = "https://script.google.com/macros/s/AKfycbxVJllokqmwuS07JerjOjSXG7DjcjVR8qwVMwJT_P4l7_4jYAIV7kMz4L6QGiRATEkt/exec";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbwMhtGGfNaMk_TLMRKpLgscaDXJgWSHxvsyVXBJlszkp7X3BU_6B2l8hQiVLougNu1y/exec";
 
 export type BackupTarget =
   | "standing"
