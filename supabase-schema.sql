@@ -5,10 +5,26 @@
 INSERT INTO storage.buckets (id, name, public) VALUES ('images', 'images', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Allow public access to images bucket
-CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id = 'images');
-CREATE POLICY "Authenticated users can upload images" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'images' AND auth.role() = 'authenticated');
-CREATE POLICY "Users can update own images" ON storage.objects FOR UPDATE USING (bucket_id = 'images' AND auth.role() = 'authenticated');
+-- Storage policies for images bucket (anon key — no auth required)
+DO $$
+BEGIN
+    CREATE POLICY "Public read images" ON storage.objects FOR SELECT USING (bucket_id = 'images');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$
+BEGIN
+    CREATE POLICY "Anon upload images" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'images');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$
+BEGIN
+    CREATE POLICY "Anon update images" ON storage.objects FOR UPDATE USING (bucket_id = 'images');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$
+BEGIN
+    CREATE POLICY "Anon delete images" ON storage.objects FOR DELETE USING (bucket_id = 'images');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Fields registry table
 CREATE TABLE fields (

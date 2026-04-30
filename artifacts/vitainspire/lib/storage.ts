@@ -66,6 +66,12 @@ export type ChoppedField = {
   fieldCode: string;
   stage: "chopped";
   createdAt: number;
+  zoneA: ChoppedZoneData;
+  zoneB: ChoppedZoneData;
+  zoneC: ChoppedZoneData;
+};
+
+export type ChoppedZoneData = {
   photo: string | null;
   chopLength: string | null;
   uniformity: string | null;

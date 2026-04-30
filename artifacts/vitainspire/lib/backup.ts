@@ -257,17 +257,32 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
       const rows = await Promise.all(
         choppedFields.map(async (f) => {
           const id = fid(f.fieldCode);
-          const photo = await u(f.photo ?? null, `${id}_chopped-photo.jpg`, { stage: "chopped", fieldId: id });
+          
+          // Ensure zone data exists with fallbacks
+          const zoneA = f.zoneA || { photo: null, chopLength: null, uniformity: null, materialQuality: null, moisture: null };
+          const zoneB = f.zoneB || { photo: null, chopLength: null, uniformity: null, materialQuality: null, moisture: null };
+          const zoneC = f.zoneC || { photo: null, chopLength: null, uniformity: null, materialQuality: null, moisture: null };
+          
+          const [zaPhoto, zbPhoto, zcPhoto] = await Promise.all([
+            u(zoneA.photo, `${id}_zoneA-chopped.jpg`),
+            u(zoneB.photo, `${id}_zoneB-chopped.jpg`),
+            u(zoneC.photo, `${id}_zoneC-chopped.jpg`),
+          ]);
+          
           return [
             f.fieldCode, labelOf(f.fieldCode), fmt(f.createdAt),
-            photo, f.chopLength ?? "", f.uniformity ?? "", f.materialQuality ?? "", f.moisture ?? "",
+            zaPhoto, zoneA.chopLength || "", zoneA.uniformity || "", zoneA.materialQuality || "", zoneA.moisture || "",
+            zbPhoto, zoneB.chopLength || "", zoneB.uniformity || "", zoneB.materialQuality || "", zoneB.moisture || "",
+            zcPhoto, zoneC.chopLength || "", zoneC.uniformity || "", zoneC.materialQuality || "", zoneC.moisture || "",
           ];
         })
       );
-      await safeWrite("Field – Chopped",
-        ["Field Code", "Label", "Captured At", "Photo", "Chop Length", "Uniformity", "Material Quality", "Moisture"],
-        rows
-      );
+      await safeWrite("Field – Chopped", [
+        "Field Code", "Label", "Captured At",
+        "Zone A – Photo", "Zone A – Chop Length", "Zone A – Uniformity", "Zone A – Material Quality", "Zone A – Moisture",
+        "Zone B – Photo", "Zone B – Chop Length", "Zone B – Uniformity", "Zone B – Material Quality", "Zone B – Moisture",
+        "Zone C – Photo", "Zone C – Chop Length", "Zone C – Uniformity", "Zone C – Material Quality", "Zone C – Moisture",
+      ], rows);
     }
 
     // ── Harvest field visits ──────────────────────────────────

@@ -6,10 +6,25 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChipGroup } from "@/components/ChipGroup";
 import { PhotoSlot } from "@/components/PhotoSlot";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { StepHeader } from "@/components/StepHeader";
 import { useToast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
-import { ChoppedField, makeId, saveField } from "@/lib/storage";
+import { ChoppedField, ChoppedZoneData, makeId, saveField } from "@/lib/storage";
 import { scheduleSync } from "@/lib/sync";
+
+const EMPTY_ZONE: ChoppedZoneData = {
+  photo: null,
+  chopLength: null,
+  uniformity: null,
+  materialQuality: null,
+  moisture: null,
+};
+
+const ZONES: Array<{ key: "A" | "B" | "C"; title: string; subtitle: string }> = [
+  { key: "A", title: "Zone A", subtitle: "Best area of the field" },
+  { key: "B", title: "Zone B", subtitle: "Average area of the field" },
+  { key: "C", title: "Zone C", subtitle: "Weakest area of the field" },
+];
 
 export default function ChoppedScreen() {
   const colors = useColors();
@@ -18,16 +33,26 @@ export default function ChoppedScreen() {
   const toast = useToast();
   const params = useLocalSearchParams<{ fieldCode?: string }>();
   const fieldCode = String(params.fieldCode || "");
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [chopLength, setChopLength] = useState<string | null>(null);
-  const [uniformity, setUniformity] = useState<string | null>(null);
-  const [materialQuality, setMaterialQuality] = useState<string | null>(null);
-  const [moisture, setMoisture] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
+  const [zoneA, setZoneA] = useState<ChoppedZoneData>({ ...EMPTY_ZONE });
+  const [zoneB, setZoneB] = useState<ChoppedZoneData>({ ...EMPTY_ZONE });
+  const [zoneC, setZoneC] = useState<ChoppedZoneData>({ ...EMPTY_ZONE });
   const [saving, setSaving] = useState(false);
 
-  const canSave = !!fieldCode && (!!photo || !!chopLength || !!uniformity || !!materialQuality || !!moisture);
+  const zones = [zoneA, zoneB, zoneC];
+  const setters = [setZoneA, setZoneB, setZoneC];
+  const current = zones[step];
+  const setCurrent = setters[step];
+  const meta = ZONES[step];
 
-  const onSave = async () => {
+  const updateZone = (patch: Partial<ChoppedZoneData>) =>
+    setCurrent({ ...current, ...patch });
+
+  const onNext = async () => {
+    if (step < 2) {
+      setStep(step + 1);
+      return;
+    }
     if (!fieldCode) return;
     setSaving(true);
     try {
@@ -36,11 +61,9 @@ export default function ChoppedScreen() {
         fieldCode,
         stage: "chopped",
         createdAt: Date.now(),
-        photo,
-        chopLength,
-        uniformity,
-        materialQuality,
-        moisture,
+        zoneA,
+        zoneB,
+        zoneC,
       };
       await saveField(record);
       scheduleSync("chopped");
@@ -64,79 +87,86 @@ export default function ChoppedScreen() {
         gap: 22,
       }}
     >
-      <View style={styles.headerWrap}>
-        {fieldCode ? (
-          <Text style={[styles.eyebrow, { color: colors.accent }]}>
-            {fieldCode}
-          </Text>
-        ) : null}
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          Chopped Stage
+      {fieldCode ? (
+        <Text style={[styles.eyebrow, { color: colors.accent }]}>
+          {fieldCode}
         </Text>
-        <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Photograph chopped material and rate quality (optional).
+      ) : null}
+
+      <StepHeader
+        step={step + 1}
+        total={3}
+        title={meta.title}
+        subtitle={meta.subtitle}
+      />
+
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+          Chopped Material
+        </Text>
+        <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>
+          Photograph chopped material and rate quality for this zone.
         </Text>
       </View>
 
       <PhotoSlot
         label="Chopped Material Photo"
-        uri={photo}
-        onChange={setPhoto}
+        uri={current.photo}
+        onChange={(uri) => updateZone({ photo: uri })}
       />
 
       <View style={{ gap: 18 }}>
         <ChipGroup
           label="Chop Length"
           options={["Fine", "Medium", "Coarse"]}
-          value={chopLength}
-          onChange={setChopLength}
+          value={current.chopLength}
+          onChange={(val) => updateZone({ chopLength: val })}
         />
         <ChipGroup
           label="Uniformity"
           options={["Uniform", "Mixed", "Uneven"]}
-          value={uniformity}
-          onChange={setUniformity}
+          value={current.uniformity}
+          onChange={(val) => updateZone({ uniformity: val })}
         />
         <ChipGroup
           label="Material Quality"
           options={["Good", "Fair", "Poor"]}
-          value={materialQuality}
-          onChange={setMaterialQuality}
+          value={current.materialQuality}
+          onChange={(val) => updateZone({ materialQuality: val })}
         />
         <ChipGroup
           label="Moisture"
           options={["Dry", "Normal", "Wet"]}
-          value={moisture}
-          onChange={setMoisture}
+          value={current.moisture}
+          onChange={(val) => updateZone({ moisture: val })}
         />
       </View>
 
       <PrimaryButton
-        title="Save Capture"
-        onPress={onSave}
+        title={step < 2 ? "Next Zone" : "Save Capture"}
+        onPress={onNext}
         loading={saving}
-        disabled={!canSave}
-        icon="check"
+        disabled={false}
+        icon={step < 2 ? "arrow-right" : "check"}
       />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerWrap: { gap: 6 },
   eyebrow: {
     fontSize: 12,
     fontFamily: "Inter_600SemiBold",
     letterSpacing: 1.2,
   },
-  title: {
-    fontSize: 26,
-    fontFamily: "Inter_700Bold",
-    lineHeight: 32,
+  section: { gap: 4 },
+  sectionTitle: {
+    fontSize: 16,
+    fontFamily: "Inter_600SemiBold",
   },
-  subtitle: {
-    fontSize: 15,
+  sectionSubtitle: {
+    fontSize: 14,
     fontFamily: "Inter_400Regular",
-    lineHeight: 20,
+    lineHeight: 18,
   },
 });
