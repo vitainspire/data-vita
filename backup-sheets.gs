@@ -88,12 +88,24 @@ function getOrCreateSheet_(ss, name) {
 function ensureHeader_(sheet, cols) {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(cols);
-    sheet.getRange(1, 1, 1, cols.length)
-         .setFontWeight("bold")
-         .setBackground("#2d6a4f")
-         .setFontColor("#ffffff");
-    sheet.setFrozenRows(1);
+  } else {
+    // Always refresh headers so schema changes (added columns) show up
+    var existing = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var changed = existing.length !== cols.length ||
+      cols.some(function(c, i) { return c !== existing[i]; });
+    if (changed) {
+      sheet.getRange(1, 1, 1, cols.length).setValues([cols]);
+      // Clear any leftover cells from the old narrower header
+      if (existing.length > cols.length) {
+        sheet.getRange(1, cols.length + 1, 1, existing.length - cols.length).clearContent();
+      }
+    }
   }
+  sheet.getRange(1, 1, 1, cols.length)
+       .setFontWeight("bold")
+       .setBackground("#2d6a4f")
+       .setFontColor("#ffffff");
+  sheet.setFrozenRows(1);
 }
 
 function json_(obj) {
