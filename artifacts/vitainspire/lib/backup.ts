@@ -263,10 +263,11 @@ async function runGoogleBackup(target: BackupTarget): Promise<{ ok: boolean; err
           const zoneB = f.zoneB || { photo: null, chopLength: null, uniformity: null, materialQuality: null, moisture: null };
           const zoneC = f.zoneC || { photo: null, chopLength: null, uniformity: null, materialQuality: null, moisture: null };
           
+          const zmeta = { stage: "chopped", fieldId: id };
           const [zaPhoto, zbPhoto, zcPhoto] = await Promise.all([
-            u(zoneA.photo, `${id}_zoneA-chopped.jpg`),
-            u(zoneB.photo, `${id}_zoneB-chopped.jpg`),
-            u(zoneC.photo, `${id}_zoneC-chopped.jpg`),
+            u(zoneA.photo, `${id}_zoneA-chopped.jpg`, zmeta),
+            u(zoneB.photo, `${id}_zoneB-chopped.jpg`, zmeta),
+            u(zoneC.photo, `${id}_zoneC-chopped.jpg`, zmeta),
           ]);
           
           return [

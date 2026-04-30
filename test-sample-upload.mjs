@@ -67,7 +67,9 @@ async function testDrive() {
   await uploadImage("Field-Demo_zoneA-cob.jpg", { stage: "cutting", fieldId: "Field-Demo" });
 
   // Field Capture — Chopped
-  await uploadImage("Field-Demo_chopped-photo.jpg", { stage: "chopped", fieldId: "Field-Demo" });
+  await uploadImage("Field-Demo_zoneA-chopped.jpg", { stage: "chopped", fieldId: "Field-Demo" });
+  await uploadImage("Field-Demo_zoneB-chopped.jpg", { stage: "chopped", fieldId: "Field-Demo" });
+  await uploadImage("Field-Demo_zoneC-chopped.jpg", { stage: "chopped", fieldId: "Field-Demo" });
 
   // Harvest
   await uploadImage("HVT-abc12345_harvest-overview.jpg", {});
@@ -130,10 +132,14 @@ async function testSheets() {
 
   await writeSheet("Field – Chopped", [
     "Field Code", "Label", "Captured At",
-    "Photo", "Chop Length", "Uniformity", "Material Quality", "Moisture",
+    "Zone A – Photo", "Zone A – Chop Length", "Zone A – Uniformity", "Zone A – Material Quality", "Zone A – Moisture",
+    "Zone B – Photo", "Zone B – Chop Length", "Zone B – Uniformity", "Zone B – Material Quality", "Zone B – Moisture",
+    "Zone C – Photo", "Zone C – Chop Length", "Zone C – Uniformity", "Zone C – Material Quality", "Zone C – Moisture",
   ], [
     ["FLD001", "North Demo Field", "28/04/2026, 12:00:00",
-      "https://drive.google.com/sample1", "12mm", "Good", "Excellent", "65%"],
+      "https://drive.google.com/sample1", "12mm", "Good", "Excellent", "65%",
+      "https://drive.google.com/sample2", "11mm", "Good", "Excellent", "63%",
+      "https://drive.google.com/sample3", "13mm", "Fair", "Good",     "67%"],
   ]);
 
   await writeSheet("Harvest – Field Visits", [
